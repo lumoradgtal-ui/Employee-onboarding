@@ -1,18 +1,21 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #5B45A5;
-  --color-dark: #453487;
-  --color-light: #F1EEFA;
-  --color-background: #F8F9FC;
+  --color-primary: #A00142;
+  --color-dark: #1D1D1D;
+  --color-sidebar: #141414;
+  --color-light: #FCE8EE;
+  --color-background: #F6F8FB;
   --color-card: #FFFFFF;
-  --color-text: #202124;
-  --color-secondary: #667085;
-  --color-border: #E6E8EF;
+  --color-text: #080809;
+  --color-secondary: #404040;
+  --color-border: #E2E8F0;
+  --color-accent: #3843C1;
+  --color-gold: #FFB539;
   --color-success: #16A34A;
   --color-warning: #F59E0B;
   --color-danger: #DC3545;
-  --color-info: #2563EB;
+  --color-info: #3843C1;
 }
 
 @layer base {
@@ -23,21 +26,26 @@
 
 @layer components {
   .btn {
-    @apply bg-primary text-white px-4 py-2 rounded-md hover:bg-dark transition-colors duration-200 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2;
+    background: linear-gradient(90deg, #A00142 25.65%, rgba(65, 0, 94, 0.95) 100%);
+    @apply text-white px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-sm shadow-md hover:shadow-lg hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 active:scale-[0.98];
+  }
+  .btn-primary {
+    background: linear-gradient(90deg, #A00142 25.65%, rgba(65, 0, 94, 0.95) 100%);
+    @apply text-white px-4 py-2 rounded-lg transition-all duration-200 font-semibold text-sm shadow-md hover:shadow-lg hover:opacity-95 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 active:scale-[0.98];
   }
   .btn-secondary {
-    @apply bg-white text-secondary border border-border px-4 py-2 rounded-md hover:bg-gray-50 transition-colors duration-200 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2;
+    @apply bg-white text-secondary border border-border px-4 py-2 rounded-lg hover:bg-gray-50 transition-colors duration-200 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2;
   }
   .btn-danger {
-    @apply bg-danger text-white px-4 py-2 rounded-md hover:bg-red-700 transition-colors duration-200 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-danger focus:ring-offset-2;
+    @apply bg-danger text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors duration-200 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-danger focus:ring-offset-2;
   }
   .input {
-    @apply w-full border border-border rounded-md px-3 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 text-sm;
+    @apply w-full border border-border rounded-lg px-3.5 py-2.5 bg-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 text-sm shadow-xs;
   }
   .card {
-    @apply bg-card rounded-lg border border-border p-5 shadow-sm;
+    @apply bg-card rounded-xl border border-border/80 p-6 shadow-sm hover:shadow-md transition-shadow duration-200;
   }
   .label {
-    @apply block text-sm font-medium text-secondary mb-1;
+    @apply block text-sm font-medium text-secondary mb-1.5;
   }
 }

@@ -175,22 +175,31 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-screen bg-background">
       {/* Sidebar */}
-      <aside className="w-64 bg-dark text-white flex flex-col flex-shrink-0">
-        <div className="p-5 border-b border-white/10">
-          <div className="text-xl font-bold tracking-tight">HRMS Platform</div>
-          <div className="mt-2 flex items-center justify-between">
-            <span className="text-sm text-light truncate pr-2">{orgName || 'Organization'}</span>
-            <button onClick={handleChangeOrg} className="text-xs text-primary bg-white/10 hover:bg-white/20 px-2 py-1 rounded transition-colors" title="Change Organization">Change</button>
+      <aside className="w-64 bg-[#141414] border-r border-[#1D1D1D] text-white flex flex-col flex-shrink-0">
+        <div className="p-5 border-b border-white/10 bg-[#1D1D1D]/50">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#A00142] to-[#3843C1] flex items-center justify-center font-bold text-white shadow-md">
+              CS
+            </div>
+            <div className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-white via-gray-100 to-gray-300 bg-clip-text text-transparent">
+              HRMS Platform
+            </div>
+          </div>
+          <div className="mt-3 flex items-center justify-between">
+            <span className="text-xs text-gray-300 truncate pr-2 font-medium">{orgName || 'Organization'}</span>
+            <button onClick={handleChangeOrg} className="text-[11px] font-semibold text-[#FFB539] bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded transition-colors" title="Change Organization">Change</button>
           </div>
         </div>
         
         <div className="flex-1 overflow-y-auto py-4">
-          <nav className="space-y-1 px-2">
+          <nav className="space-y-1 px-3">
             <NavLink
               to="/"
               className={({ isActive }) =>
-                `group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
-                  isActive ? 'bg-primary text-white' : 'text-light hover:bg-white/10 hover:text-white'
+                `group flex items-center px-3 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
+                  isActive 
+                    ? 'bg-gradient-to-r from-[#A00142] to-[#710171] text-white shadow-md border-l-4 border-[#FFB539]' 
+                    : 'text-gray-300 hover:bg-white/10 hover:text-white'
                 }`
               }
             >
@@ -199,7 +208,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </NavLink>
             
             <div className="pt-4 pb-2">
-              <p className="px-3 text-xs font-semibold text-white/50 uppercase tracking-wider">
+              <p className="px-3 text-[11px] font-bold text-[#FFB539] uppercase tracking-wider">
                 Modules
               </p>
             </div>
@@ -211,12 +220,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   key={m.path}
                   to={m.path}
                   className={({ isActive }) =>
-                    `group flex items-center px-2 py-2 text-sm font-medium rounded-md transition-colors ${
-                      isActive ? 'bg-primary text-white' : 'text-light hover:bg-white/10 hover:text-white'
+                    `group flex items-center px-3 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200 ${
+                      isActive 
+                        ? 'bg-gradient-to-r from-[#A00142] to-[#710171] text-white shadow-md border-l-4 border-[#FFB539]' 
+                        : 'text-gray-300 hover:bg-white/10 hover:text-white'
                     }`
                   }
                 >
-                  <Icon className="mr-3 flex-shrink-0 h-5 w-5 opacity-70 group-hover:opacity-100" />
+                  <Icon className="mr-3 flex-shrink-0 h-5 w-5 opacity-80 group-hover:opacity-100" />
                   {m.name}
                 </NavLink>
               );
@@ -224,10 +235,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
         
-        <div className="p-4 border-t border-white/10">
+        <div className="p-4 border-t border-white/10 bg-[#1D1D1D]/50">
           <button
             onClick={handleSignOut}
-            className="w-full flex items-center justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-white/10 hover:bg-white/20 transition-colors"
+            className="w-full flex items-center justify-center px-4 py-2 border border-white/10 rounded-lg shadow-sm text-sm font-semibold text-white bg-white/10 hover:bg-white/20 transition-colors"
           >
             Sign out
           </button>
