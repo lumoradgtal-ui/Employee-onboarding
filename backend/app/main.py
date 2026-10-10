@@ -2,6 +2,7 @@ import smtplib
 import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.header import Header
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,7 +28,7 @@ def send_email_notification(to_email: str, subject: str, body_text: str, body_ht
             msg = MIMEMultipart("alternative")
             msg['From'] = smtp_user
             msg['To'] = to_email
-            msg['Subject'] = subject
+            msg['Subject'] = Header(subject, 'utf-8')
             msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
             if body_html:
                 msg.attach(MIMEText(body_html, 'html', 'utf-8'))
