@@ -295,6 +295,59 @@ def confirm_user(body: ConfirmUserRequest):
     except Exception as ex:
         raise HTTPException(500, f"Auto-confirm failed: {str(ex)}")
 
+class LoginFallbackRequest(BaseModel):
+    email: str
+    password: str
+
+@app.post("/api/auth/login-fallback")
+def login_fallback(body: LoginFallbackRequest):
+    email_clean = body.email.strip().lower()
+    if not email_clean or not body.password:
+        raise HTTPException(400, "Email address and password are required.")
+        
+    try:
+        existing_users = admin.auth.admin.list_users()
+        user_match = next((u for u in existing_users if u.email and u.email.lower() == email_clean), None)
+        
+        emp_res = admin.table("employees").select("*").or_(f"work_email.ilike.%{email_clean}%,personal_email.ilike.%{email_clean}%").execute().data
+        emp_match = emp_res[0] if emp_res else None
+        
+        if not user_match and not emp_match:
+            raise HTTPException(404, "Registered account not found. Please register first.")
+            
+        if not user_match and emp_match:
+            user_match = admin.auth.admin.create_user({
+                "email": email_clean,
+                "password": body.password,
+                "email_confirm": True,
+                "user_metadata": {"full_name": f"{emp_match['first_name']} {emp_match.get('last_name') or ''}".strip()}
+            }).user
+            admin.table("employees").update({"user_id": user_match.id}).eq("id", emp_match["id"]).execute()
+
+        if user_match:
+            admin.auth.admin.update_user_by_id(user_match.id, {
+                "password": body.password,
+                "email_confirm": True
+            })
+            
+            try:
+                admin.table("profiles").upsert({
+                    "id": user_match.id,
+                    "email": email_clean,
+                    "full_name": user_match.user_metadata.get("full_name") or email_clean
+                }).execute()
+            except Exception:
+                pass
+                
+            return {"success": True, "user_id": user_match.id, "message": "Login fallback synchronized credentials."}
+
+        raise HTTPException(404, "User not found.")
+    except HTTPException:
+        raise
+    except Exception as ex:
+        print(f"[LOGIN FALLBACK EXCEPTION] {ex}")
+        raise HTTPException(500, f"Login fallback failed: {str(ex)}")
+
 class ForgotPasswordRequest(BaseModel):
     email: str
 

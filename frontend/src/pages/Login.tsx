@@ -55,22 +55,22 @@ export default function Login() {
           setMode('login');
         }
       } else if (mode === 'login') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
         if (error) {
-          if ((error.message || '').toLowerCase().includes('email not confirmed')) {
-            try {
-              await api('/api/auth/confirm-user', {
-                method: 'POST',
-                body: JSON.stringify({ email: email.trim() }),
-              });
-              const retry = await supabase.auth.signInWithPassword({ email, password });
-              if (retry.error) throw retry.error;
-            } catch (confirmErr: any) {
-              throw error;
+          try {
+            await api('/api/auth/login-fallback', {
+              method: 'POST',
+              body: JSON.stringify({ email: email.trim(), password }),
+            });
+            const retry = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+            if (!retry.error) {
+              localStorage.setItem('hrms_last_portal', portalType);
+              return;
             }
-          } else {
-            throw error;
+          } catch (fbErr: any) {
+            console.error('Fallback login sync error:', fbErr);
           }
+          throw error;
         }
         localStorage.setItem('hrms_last_portal', portalType);
       } else if (mode === 'reset') {
