@@ -43,17 +43,8 @@ export default function Login() {
           if (signUpErr) throw signUpErr;
         }
 
-        const { error: signInErr } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-
-        if (!signInErr) {
-          localStorage.setItem('hrms_last_portal', portalType);
-        } else {
-          setMessage('Registration successful & welcome verification email sent to your inbox! You can now sign in.');
-          setMode('login');
-        }
+        setMessage('Registration successful & welcome verification email sent to your inbox! You can now sign in.');
+        setMode('login');
       } else if (mode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
         if (error) {
