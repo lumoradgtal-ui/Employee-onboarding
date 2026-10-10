@@ -98,19 +98,46 @@ def dashboard(org_id: str, user=Depends(get_user)):
         except Exception: return 0
     return {"employees":count("employees"),"active_employees":len(admin.table("employees").select("id").eq("organization_id",org_id).eq("status","active").execute().data),"onboarding":count("onboarding_tasks"),"probation":count("probation_records"),"leave_pending":len(admin.table("leave_requests").select("id").eq("organization_id",org_id).eq("status","pending").execute().data),"open_jobs":len(admin.table("jobs").select("id").eq("organization_id",org_id).eq("status","open").execute().data),"expenses_pending":len(admin.table("expenses").select("id").eq("organization_id",org_id).eq("status","pending").execute().data)}
 
+def generate_next_employee_code(org_id: str) -> str:
+    existing = admin.table("employees").select("employee_code").eq("organization_id", org_id).execute().data or []
+    max_num = 0
+    for e in existing:
+        code = e.get("employee_code") or ""
+        nums = "".join([c for c in code if c.isdigit()])
+        if nums:
+            try:
+                num = int(nums)
+                if num > max_num:
+                    max_num = num
+            except ValueError:
+                pass
+    next_num = max_num + 1
+    return f"{next_num:03d}"
+
 @app.get("/api/employees")
 def employees(org_id: str, user=Depends(get_user), q: str="", status: str="", limit: int=100, offset: int=0):
-    require_org(user.id,org_id)
-    query=admin.table("employees").select("*, departments!employees_department_id_fkey(name), designations(name)").eq("organization_id",org_id).order("created_at",desc=True)
-    if status: query=query.eq("status",status)
-    if q: query=query.or_(f"first_name.ilike.%{q}%,last_name.ilike.%{q}%,work_email.ilike.%{q}%,employee_code.ilike.%{q}%")
-    return query.range(offset,offset+limit-1).execute().data
+    require_org(user.id, org_id)
+    
+    # Auto-assign sequential employee codes (001, 002, 003...) to any existing employees missing a code
+    unassigned = admin.table("employees").select("id, created_at").eq("organization_id", org_id).or_("employee_code.is.null,employee_code.eq.").order("created_at", desc=False).execute().data or []
+    if unassigned:
+        for u in unassigned:
+            next_code = generate_next_employee_code(org_id)
+            admin.table("employees").update({"employee_code": next_code}).eq("id", u["id"]).execute()
+            
+    query = admin.table("employees").select("*, departments!employees_department_id_fkey(name), designations(name)").eq("organization_id", org_id).order("created_at", desc=True)
+    if status: query = query.eq("status", status)
+    if q: query = query.or_(f"first_name.ilike.%{q}%,last_name.ilike.%{q}%,work_email.ilike.%{q}%,employee_code.ilike.%{q}%")
+    return query.range(offset, offset + limit - 1).execute().data
 
 @app.post("/api/employees")
 def create_employee(body: EmployeeCreate, user=Depends(get_user)):
-    require_role(user.id,body.organization_id,["owner","admin","hr"])
-    emp=admin.table("employees").insert(body.model_dump(mode="json")).execute().data[0]
-    admin.table("employee_status_history").insert({"organization_id":body.organization_id,"employee_id":emp["id"],"from_status":None,"to_status":emp["status"],"changed_by":user.id,"reason":"Employee created"}).execute()
+    require_role(user.id, body.organization_id, ["owner", "admin", "hr"])
+    data = body.model_dump(mode="json")
+    if not data.get("employee_code") or not str(data["employee_code"]).strip():
+        data["employee_code"] = generate_next_employee_code(body.organization_id)
+    emp = admin.table("employees").insert(data).execute().data[0]
+    admin.table("employee_status_history").insert({"organization_id": body.organization_id, "employee_id": emp["id"], "from_status": None, "to_status": emp["status"], "changed_by": user.id, "reason": "Employee created"}).execute()
     return emp
 
 @app.get("/api/employees/{employee_id}")
@@ -398,6 +425,7 @@ def convert_candidate(candidate_id: str, org_id: str, user=Depends(get_user)):
     # Create employee from candidate
     emp_data = {
         "organization_id": org_id,
+        "employee_code": generate_next_employee_code(org_id),
         "first_name": c["first_name"],
         "last_name": c["last_name"],
         "personal_email": c["email"],

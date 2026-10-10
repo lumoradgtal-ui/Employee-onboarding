@@ -176,7 +176,7 @@ export default function EmployeeNew() {
             </div>
             <div>
               <label className="label">Employee ID</label>
-              <input className="input" value={form.employee_code} onChange={e => setForm({ ...form, employee_code: e.target.value })} />
+              <input className="input" placeholder="Auto-generated (e.g. 001, 002, 003...)" value={form.employee_code} onChange={e => setForm({ ...form, employee_code: e.target.value })} />
             </div>
             
             <div>
