@@ -57,14 +57,45 @@ const modules = [
 export default function Shell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { orgId, orgName, clearOrg } = useAppStore();
+  const { orgId, orgName, setOrg, clearOrg } = useAppStore();
   const [showNotifications, setShowNotifications] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showEditOrgModal, setShowEditOrgModal] = useState(false);
+  const [editOrgNameInput, setEditOrgNameInput] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isUpdatingPw, setIsUpdatingPw] = useState(false);
   const [pwStatus, setPwStatus] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+
+  const { data: userOrgs = [] } = useQuery({
+    queryKey: ['userOrganizations'],
+    queryFn: () => api('/api/organizations'),
+  });
+
+  const currentOrgMem = userOrgs.find((o: any) => o.organization_id === orgId);
+
+  const updateOrgMutation = useMutation({
+    mutationFn: (newName: string) =>
+      api(`/api/organization/${orgId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ name: newName }),
+      }),
+    onSuccess: (data) => {
+      if (orgId && data?.name) setOrg(orgId, data.name);
+      queryClient.invalidateQueries({ queryKey: ['userOrganizations'] });
+      setShowEditOrgModal(false);
+    },
+    onError: (err: any) => {
+      alert(err.message || 'Failed to update organization name');
+    }
+  });
+
+  const handleOrgNameSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editOrgNameInput.trim()) return;
+    updateOrgMutation.mutate(editOrgNameInput.trim());
+  };
 
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -158,10 +189,15 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     (e.user_id && e.user_id === currentUserId)
   );
 
+  const currentOrgRole = (currentOrgMem?.role || myEmp?.role || 'owner').toLowerCase();
+
   const isAdminOrManager = 
-    ['owner', 'admin', 'hr', 'manager'].includes((myEmp?.role || '').toLowerCase()) ||
+    ['owner', 'admin', 'hr', 'manager'].includes(currentOrgRole) ||
     currentUserEmail === 'testadmin@gmail.com' ||
-    currentUserEmail?.includes('admin');
+    currentUserEmail?.includes('admin') ||
+    !myEmp;
+
+  const displayRoleLabel = (currentOrgMem?.role || myEmp?.role || (isAdminOrManager ? 'OWNER' : 'EMPLOYEE')).toUpperCase();
 
   const myPendingTasks = myEmp
     ? onboardingTasks.filter((t: any) => t.employee_id === myEmp.id && t.status === 'pending')
@@ -212,7 +248,16 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <div className="mt-3 flex items-center justify-between">
             <span className="text-xs text-gray-300 truncate pr-2 font-medium">{orgName || 'Organization'}</span>
             {isAdminOrManager && (
-              <button onClick={handleChangeOrg} className="text-[11px] font-semibold text-[#FFB539] bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded transition-colors cursor-pointer" title="Change Organization">Change</button>
+              <div className="flex items-center gap-1">
+                <button 
+                  onClick={() => { setEditOrgNameInput(orgName || ''); setShowEditOrgModal(true); }} 
+                  className="text-[11px] font-semibold text-white/80 hover:text-white bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded transition-colors cursor-pointer" 
+                  title="Rename Organization"
+                >
+                  Edit
+                </button>
+                <button onClick={handleChangeOrg} className="text-[11px] font-semibold text-[#FFB539] bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded transition-colors cursor-pointer" title="Change Organization">Change</button>
+              </div>
             )}
           </div>
         </div>
@@ -354,7 +399,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                  <div className="hidden md:flex flex-col text-left pr-1">
                    <span className="text-xs font-bold text-gray-900 leading-tight max-w-[120px] truncate">{userDisplayName}</span>
                    <span className="text-[10px] font-semibold text-[#A00142] uppercase tracking-wider">
-                     {myEmp?.role ? myEmp.role.toUpperCase() : (isAdminOrManager ? 'ADMIN' : 'EMPLOYEE')}
+                     {displayRoleLabel}
                    </span>
                  </div>
                  <ChevronDown className={`w-3.5 h-3.5 text-gray-500 transition-transform duration-200 ${showProfileMenu ? 'rotate-180' : ''}`} />
@@ -573,6 +618,51 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 Review & Complete Tasks Now →
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Organization Name Modal */}
+      {showEditOrgModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-xl border border-gray-100">
+            <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+              <h3 className="text-lg font-bold text-[#080809] flex items-center gap-2">
+                <Building2 className="w-5 h-5 text-[#A00142]" /> Edit Organization Name
+              </h3>
+              <button onClick={() => setShowEditOrgModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+
+            <form onSubmit={handleOrgNameSave} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">Organization / Company Name</label>
+                <input
+                  type="text"
+                  value={editOrgNameInput}
+                  onChange={(e) => setEditOrgNameInput(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-[#A00142] outline-none"
+                  placeholder="e.g. CypherSwift Technologies"
+                  required
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEditOrgModal(false)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updateOrgMutation.isPending}
+                  className="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-[#A00142] to-[#3843C1] rounded-lg shadow hover:opacity-90 disabled:opacity-50"
+                >
+                  {updateOrgMutation.isPending ? 'Saving...' : 'Save Organization Name'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

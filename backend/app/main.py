@@ -61,7 +61,16 @@ def bootstrap(body: OrgCreate, user=Depends(get_user)):
     org=admin.table("organizations").insert({"name":body.name}).execute().data[0]
     admin.table("organization_members").insert({"organization_id":org["id"],"user_id":user.id,"role":"owner","status":"active"}).execute()
     admin.table("profiles").upsert({"id":user.id,"full_name":user.user_metadata.get("full_name") or user.email,"email":user.email}).execute()
-    return org
+class OrgUpdate(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+
+@app.patch("/api/organization/{org_id}")
+def update_organization(org_id: str, body: OrgUpdate, user=Depends(get_user)):
+    require_role(user.id, org_id, ["owner", "admin"])
+    res = admin.table("organizations").update({"name": body.name.strip()}).eq("id", org_id).execute().data
+    if not res:
+        raise HTTPException(404, "Organization not found")
+    return res[0]
 
 @app.get("/api/organizations")
 def organizations(user=Depends(get_user)):
