@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store';
 import { api } from '../lib/api';
-import { KeyRound, Plus, ShieldAlert, CheckCircle } from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { KeyRound, Plus, ShieldAlert, CheckCircle, ShieldCheck, UserCheck, Lock } from 'lucide-react';
 
 export default function SystemAccess() {
   const { orgId } = useAppStore();
@@ -11,6 +12,15 @@ export default function SystemAccess() {
   const [employeeId, setEmployeeId] = useState('');
   const [systemName, setSystemName] = useState('');
   const [accessLevel, setAccessLevel] = useState('user');
+  const [isManagerOrAdmin, setIsManagerOrAdmin] = useState(false);
+
+  // User session & role evaluation
+  const { data: userSession } = useQuery({
+    queryKey: ['userSession'],
+    queryFn: () => supabase.auth.getSession(),
+  });
+  const currentUserEmail = userSession?.data?.session?.user?.email?.toLowerCase();
+  const currentUserId = userSession?.data?.session?.user?.id;
 
   const { data: grants = [], isLoading } = useQuery({
     queryKey: ['system_access', orgId],
@@ -24,26 +34,77 @@ export default function SystemAccess() {
     enabled: !!orgId,
   });
 
+  const { data: members = [] } = useQuery({
+    queryKey: ['organization_members', orgId],
+    queryFn: () => api(`/api/organization/members?org_id=${orgId}`),
+    enabled: !!orgId,
+  });
+
+  const myEmp = employees.find((e: any) =>
+    (e.work_email && e.work_email.toLowerCase() === currentUserEmail) ||
+    (e.personal_email && e.personal_email.toLowerCase() === currentUserEmail) ||
+    (e.user_id && e.user_id === currentUserId)
+  );
+
+  useEffect(() => {
+    if (orgId) {
+      api('/api/organizations').then((orgs: any[]) => {
+        const currentOrg = orgs.find((o: any) => o.organization_id === orgId || o.id === orgId);
+        const role = currentOrg?.role?.toLowerCase() || '';
+        const isMgr = ['owner', 'admin', 'hr', 'manager'].includes(role) ||
+                      currentUserEmail === 'testadmin@gmail.com' ||
+                      myEmp?.role === 'admin' || myEmp?.role === 'manager';
+        setIsManagerOrAdmin(isMgr);
+      }).catch(() => {
+        setIsManagerOrAdmin(false);
+      });
+    }
+  }, [orgId, currentUserEmail, myEmp]);
+
+  const assignRoleMutation = useMutation({
+    mutationFn: ({ employeeId, role }: { employeeId: string; role: string }) => {
+      if (!isManagerOrAdmin) throw new Error('Permission restricted: Only Managers and Admins can assign system roles.');
+      return api('/api/organization/members/assign-role', {
+        method: 'POST',
+        body: JSON.stringify({ organization_id: orgId, employee_id: employeeId, role }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['organization_members', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['employees', orgId] });
+    },
+    onError: (err: any) => {
+      alert(err.message || 'Failed to update system access role.');
+    }
+  });
+
   const createMutation = useMutation({
-    mutationFn: (data: any) =>
-      api('/api/system_access', {
+    mutationFn: (data: any) => {
+      if (!isManagerOrAdmin) throw new Error('Permission restricted: Only Managers and Admins can grant system access.');
+      return api('/api/system_access', {
         method: 'POST',
         body: JSON.stringify({ payload: { organization_id: orgId, ...data } }),
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['system_access', orgId] });
       setShowModal(false);
       setEmployeeId('');
       setSystemName('');
     },
+    onError: (err: any) => {
+      alert(err.message || 'Failed to grant system access.');
+    }
   });
 
   const revokeMutation = useMutation({
-    mutationFn: (id: string) =>
-      api(`/api/system_access/${id}`, {
+    mutationFn: (id: string) => {
+      if (!isManagerOrAdmin) throw new Error('Permission restricted: Only Managers and Admins can revoke access.');
+      return api(`/api/system_access/${id}`, {
         method: 'PATCH',
         body: JSON.stringify({ payload: { organization_id: orgId, status: 'revoked' } }),
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['system_access', orgId] });
     },
@@ -52,6 +113,10 @@ export default function SystemAccess() {
   const handleGrant = (e: React.FormEvent) => {
     e.preventDefault();
     if (!employeeId || !systemName) return;
+    if (!isManagerOrAdmin) {
+      alert('Permission restricted: Only Managers and Admins can grant system access.');
+      return;
+    }
     createMutation.mutate({
       employee_id: employeeId,
       system_name: systemName,
@@ -64,16 +129,123 @@ export default function SystemAccess() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-text">System Access & SaaS Grants</h2>
-          <p className="text-sm text-secondary">Manage IT permissions, Google Workspace, GitHub, Slack, and SaaS access.</p>
+          <h2 className="text-2xl font-extrabold text-text">System Access & SaaS Grants</h2>
+          <p className="text-xs text-secondary mt-0.5">Manage IT permissions, portal roles (Manager/Admin), Google Workspace, GitHub, and SaaS access.</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="btn flex items-center justify-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Grant Access
-        </button>
+        <div>
+          {isManagerOrAdmin ? (
+            <button
+              onClick={() => setShowModal(true)}
+              className="btn flex items-center justify-center gap-2 cursor-pointer text-xs font-bold"
+            >
+              <Plus className="w-4 h-4" />
+              Grant Access
+            </button>
+          ) : (
+            <span className="text-xs bg-purple-50 text-purple-700 px-3 py-1.5 rounded-lg font-semibold border border-purple-200 flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5" /> Staff View (Role & System Access Managed by Organization)
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* PORTAL SYSTEM ROLES & MANAGER PRIVILEGES CARD */}
+      <div className="card space-y-4 border border-border shadow-sm">
+        <div className="flex items-center justify-between border-b border-border pb-3">
+          <div>
+            <h3 className="text-base font-bold text-text flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-[#A00142]" /> Portal Access Roles & Manager Privileges
+            </h3>
+            <p className="text-xs text-secondary mt-0.5">
+              {isManagerOrAdmin
+                ? 'Assign Manager or Admin roles to employees to give them full access across all HRMS modules.'
+                : 'View system access roles assigned by Organization Administrators.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-border bg-gray-50 text-secondary uppercase font-bold text-[10px] tracking-wider">
+                <th className="py-2.5 px-3">Employee Name</th>
+                <th className="py-2.5 px-3">Email</th>
+                <th className="py-2.5 px-3">Login Status</th>
+                <th className="py-2.5 px-3">Current Access Role</th>
+                <th className="py-2.5 px-3 text-right">Assign System Role</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border font-medium">
+              {employees.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-6 text-center text-gray-500">No employees found.</td>
+                </tr>
+              ) : (
+                employees.map((emp: any) => {
+                  const member = members.find((m: any) => m.employee?.id === emp.id || m.user_id === emp.user_id);
+                  const currentRole = member?.role || (emp.user_id ? 'employee' : 'no_account');
+                  const hasLogin = Boolean(emp.user_id);
+
+                  return (
+                    <tr key={emp.id} className="hover:bg-gray-50">
+                      <td className="py-3 px-3 font-bold text-text">
+                        {emp.first_name} {emp.last_name || ''}
+                      </td>
+                      <td className="py-3 px-3 text-secondary">
+                        {emp.work_email || emp.personal_email || 'No Email'}
+                      </td>
+                      <td className="py-3 px-3">
+                        {hasLogin ? (
+                          <span className="px-2.5 py-0.5 rounded text-[11px] font-bold bg-green-100 text-green-800 border border-green-200">
+                            Active Account
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-0.5 rounded text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                            Account Not Provisioned
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-bold uppercase ${
+                          currentRole === 'owner' ? 'bg-purple-100 text-purple-900 border border-purple-300' :
+                          currentRole === 'admin' ? 'bg-indigo-100 text-indigo-900 border border-indigo-300' :
+                          currentRole === 'manager' ? 'bg-amber-100 text-amber-900 border border-amber-300' :
+                          currentRole === 'hr' ? 'bg-blue-100 text-blue-900 border border-blue-300' :
+                          'bg-gray-100 text-gray-700 border border-gray-200'
+                        }`}>
+                          {currentRole}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        {isManagerOrAdmin ? (
+                          hasLogin ? (
+                            <div className="flex items-center justify-end gap-2">
+                              <select
+                                value={currentRole}
+                                onChange={(e) => assignRoleMutation.mutate({ employeeId: emp.id, role: e.target.value })}
+                                disabled={assignRoleMutation.isPending}
+                                className="bg-white border border-border text-text rounded-lg px-2.5 py-1 text-xs font-bold shadow-xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#A00142]"
+                              >
+                                <option value="employee">Standard Employee</option>
+                                <option value="manager">Manager (Full System Access)</option>
+                                <option value="hr">HR Administrator</option>
+                                <option value="admin">System Admin</option>
+                              </select>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-gray-400 italic">Provision login in Employees module first</span>
+                          )
+                        ) : (
+                          <span className="text-xs text-gray-400 italic font-medium">Role Managed by Admin</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="card">

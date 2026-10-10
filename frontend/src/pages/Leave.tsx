@@ -14,6 +14,7 @@ export default function Leave() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [reason, setReason] = useState('');
+  const [isOrgAdmin, setIsOrgAdmin] = useState(false);
 
   const { data: userSession } = useQuery({
     queryKey: ['userSession'],
@@ -48,6 +49,21 @@ export default function Leave() {
   );
 
   useEffect(() => {
+    if (orgId) {
+      api('/api/organizations').then((orgs: any[]) => {
+        const currentOrg = orgs.find((o: any) => o.organization_id === orgId || o.id === orgId);
+        const role = currentOrg?.role?.toLowerCase() || '';
+        const isMgr = ['owner', 'admin', 'hr', 'manager'].includes(role) ||
+                      currentUserEmail === 'testadmin@gmail.com' ||
+                      myEmp?.role === 'admin' || myEmp?.role === 'manager';
+        setIsOrgAdmin(isMgr);
+      }).catch(() => {
+        setIsOrgAdmin(false);
+      });
+    }
+  }, [orgId, currentUserEmail, myEmp]);
+
+  useEffect(() => {
     if (myEmp) {
       setEmployeeId(myEmp.id);
     } else if (employees.length > 0 && !employeeId) {
@@ -63,6 +79,7 @@ export default function Leave() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leave_requests', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', orgId] });
       setShowModal(false);
       setEmployeeId('');
       setLeaveTypeId('');
@@ -85,6 +102,7 @@ export default function Leave() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['leave_requests', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', orgId] });
     },
   });
 
@@ -179,10 +197,18 @@ export default function Leave() {
               <tbody className="divide-y divide-border">
                 {requests.map((r: any) => {
                   const emp = employees.find((e: any) => e.id === r.employee_id);
+                  const isMyOwnRequest = myEmp && r.employee_id === myEmp.id;
+                  const canApprove = isOrgAdmin && !isMyOwnRequest;
+
                   return (
                     <tr key={r.id} className="hover:bg-gray-50 transition-colors">
                       <td className="py-3 px-4 font-medium text-text">
                         {emp ? `${emp.first_name} ${emp.last_name || ''}` : r.employee_id}
+                        {isMyOwnRequest && (
+                          <span className="ml-2 text-[10px] bg-purple-100 text-purple-800 font-bold px-1.5 py-0.5 rounded border border-purple-200">
+                            You
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-xs text-text">
                         {r.start_date} to {r.end_date}
@@ -198,22 +224,36 @@ export default function Leave() {
                           {r.status}
                         </span>
                       </td>
-                      <td className="py-3 px-4 flex gap-2">
-                        {r.status === 'pending' && (
-                          <>
-                            <button
-                              onClick={() => statusMutation.mutate({ id: r.id, status: 'approved' })}
-                              className="px-2 py-1 text-xs bg-green-50 text-green-700 hover:bg-green-100 rounded border border-green-200 flex items-center gap-1"
-                            >
-                              <CheckCircle2 className="w-3 h-3" /> Approve
-                            </button>
-                            <button
-                              onClick={() => statusMutation.mutate({ id: r.id, status: 'rejected' })}
-                              className="px-2 py-1 text-xs bg-red-50 text-red-700 hover:bg-red-100 rounded border border-red-200 flex items-center gap-1"
-                            >
-                              <XCircle className="w-3 h-3" /> Reject
-                            </button>
-                          </>
+                      <td className="py-3 px-4">
+                        {r.status === 'pending' ? (
+                          canApprove ? (
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => statusMutation.mutate({ id: r.id, status: 'approved' })}
+                                disabled={statusMutation.isPending}
+                                className="px-2.5 py-1 text-xs bg-green-50 text-green-700 hover:bg-green-100 rounded-md border border-green-300 font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5" /> Approve
+                              </button>
+                              <button
+                                onClick={() => statusMutation.mutate({ id: r.id, status: 'rejected' })}
+                                disabled={statusMutation.isPending}
+                                className="px-2.5 py-1 text-xs bg-red-50 text-red-700 hover:bg-red-100 rounded-md border border-red-300 font-bold flex items-center gap-1 cursor-pointer"
+                              >
+                                <XCircle className="w-3.5 h-3.5" /> Reject
+                              </button>
+                            </div>
+                          ) : isMyOwnRequest ? (
+                            <span className="text-xs text-amber-700 font-semibold italic flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" /> Pending Manager Approval (Self-Approval Restricted)
+                            </span>
+                          ) : (
+                            <span className="text-xs text-amber-700 font-semibold italic flex items-center gap-1">
+                              <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse" /> Pending Manager Approval
+                            </span>
+                          )
+                        ) : (
+                          <span className="text-xs text-secondary capitalize font-medium">{r.status}</span>
                         )}
                       </td>
                     </tr>

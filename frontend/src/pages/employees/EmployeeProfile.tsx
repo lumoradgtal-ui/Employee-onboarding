@@ -265,6 +265,9 @@ export default function EmployeeProfile() {
       queryClient.invalidateQueries({ queryKey: ['employees', orgId] });
       setShowEditModal(false);
     },
+    onError: (err: any) => {
+      alert(err.message || 'Failed to update employee profile');
+    }
   });
 
   const handleSave = (e: React.FormEvent) => {
@@ -435,9 +438,9 @@ export default function EmployeeProfile() {
             <button
               onClick={() => provisionMutation.mutate()}
               disabled={provisionMutation.isPending}
-              className="btn bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 flex items-center gap-2 text-xs"
+              className="px-4 py-2 bg-[#FCE8EE] text-[#A00142] hover:bg-[#A00142] hover:text-white border border-[#A00142]/40 rounded-lg font-bold flex items-center gap-2 text-xs transition-all duration-200 shadow-xs group cursor-pointer"
             >
-              <Shield className="w-4 h-4 text-purple-600" />
+              <Shield className="w-4 h-4 text-[#A00142] group-hover:text-white transition-colors" />
               {provisionMutation.isPending ? 'Provisioning...' : 'Provision Login Account'}
             </button>
           )}

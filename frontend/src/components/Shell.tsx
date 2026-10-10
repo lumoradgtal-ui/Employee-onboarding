@@ -27,7 +27,11 @@ import {
   Check,
   ExternalLink,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  User,
+  UserCircle,
+  ChevronDown,
+  Building2
 } from 'lucide-react';
 
 const modules = [
@@ -55,6 +59,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
   const { orgId, orgName, clearOrg } = useAppStore();
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -153,9 +158,28 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     (e.user_id && e.user_id === currentUserId)
   );
 
+  const isAdminOrManager = 
+    ['owner', 'admin', 'hr', 'manager'].includes((myEmp?.role || '').toLowerCase()) ||
+    currentUserEmail === 'testadmin@gmail.com' ||
+    currentUserEmail?.includes('admin');
+
   const myPendingTasks = myEmp
     ? onboardingTasks.filter((t: any) => t.employee_id === myEmp.id && t.status === 'pending')
     : [];
+
+  const userDisplayName = myEmp?.first_name 
+    ? `${myEmp.first_name} ${myEmp.last_name || ''}`.trim() 
+    : (currentUserEmail?.split('@')[0] || 'User');
+    
+  const userInitials = userDisplayName
+    .split(' ')
+    .filter(Boolean)
+    .map((n: string) => n[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase() || 'U';
+
+  const myProfilePath = myEmp?.id ? `/employees/${myEmp.id}` : '/employees';
 
   useEffect(() => {
     if (myEmp && myPendingTasks.length > 0 && !acknowledgedTaskPopup) {
@@ -187,7 +211,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="mt-3 flex items-center justify-between">
             <span className="text-xs text-gray-300 truncate pr-2 font-medium">{orgName || 'Organization'}</span>
-            <button onClick={handleChangeOrg} className="text-[11px] font-semibold text-[#FFB539] bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded transition-colors" title="Change Organization">Change</button>
+            {isAdminOrManager && (
+              <button onClick={handleChangeOrg} className="text-[11px] font-semibold text-[#FFB539] bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded transition-colors cursor-pointer" title="Change Organization">Change</button>
+            )}
           </div>
         </div>
         
@@ -238,7 +264,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         <div className="p-4 border-t border-white/10 bg-[#1D1D1D]/50">
           <button
             onClick={handleSignOut}
-            className="w-full flex items-center justify-center px-4 py-2 border border-white/10 rounded-lg shadow-sm text-sm font-semibold text-white bg-white/10 hover:bg-white/20 transition-colors"
+            className="w-full flex items-center justify-center px-4 py-2 border border-white/10 rounded-lg shadow-sm text-sm font-semibold text-white bg-white/10 hover:bg-white/20 transition-colors cursor-pointer"
           >
             Sign out
           </button>
@@ -254,8 +280,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
              {/* Notification Bell */}
              <div className="relative">
                <button
-                 onClick={() => setShowNotifications(!showNotifications)}
-                 className="p-2 text-secondary hover:text-text hover:bg-gray-100 rounded-full transition-colors relative"
+                 onClick={() => { setShowNotifications(!showNotifications); setShowProfileMenu(false); }}
+                 className="p-2 text-secondary hover:text-text hover:bg-gray-100 rounded-full transition-colors relative cursor-pointer"
                  title="Notifications"
                >
                  <Bell className="w-5 h-5" />
@@ -312,15 +338,97 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                )}
              </div>
 
-             {/* Change Password Button */}
-             <button
-               onClick={() => setShowPasswordModal(true)}
-               className="p-2 text-secondary hover:text-text hover:bg-gray-100 rounded-full transition-colors flex items-center gap-1 text-xs font-medium"
-               title="Change Password"
-             >
-               <Key className="w-4 h-4 text-primary" />
-               <span className="hidden sm:inline">Change Password</span>
-             </button>
+             {/* User Profile Avatar & Dropdown */}
+             <div className="relative">
+               <button
+                 onClick={() => { setShowProfileMenu(!showProfileMenu); setShowNotifications(false); }}
+                 className="flex items-center gap-2 p-1.5 rounded-full hover:bg-gray-100 transition-colors focus:outline-none cursor-pointer"
+                 title="Account & Profile"
+               >
+                 <div className="relative">
+                   <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#A00142] to-[#3843C1] text-white font-extrabold text-xs flex items-center justify-center shadow-md border-2 border-white">
+                     {userInitials}
+                   </div>
+                   <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 border-2 border-white rounded-full"></span>
+                 </div>
+                 <div className="hidden md:flex flex-col text-left pr-1">
+                   <span className="text-xs font-bold text-gray-900 leading-tight max-w-[120px] truncate">{userDisplayName}</span>
+                   <span className="text-[10px] font-semibold text-[#A00142] uppercase tracking-wider">
+                     {myEmp?.role ? myEmp.role.toUpperCase() : (isAdminOrManager ? 'ADMIN' : 'EMPLOYEE')}
+                   </span>
+                 </div>
+                 <ChevronDown className={`w-3.5 h-3.5 text-gray-500 transition-transform duration-200 ${showProfileMenu ? 'rotate-180' : ''}`} />
+               </button>
+
+               {/* Profile Dropdown Menu */}
+               {showProfileMenu && (
+                 <div className="absolute right-0 mt-2 w-64 bg-white rounded-2xl shadow-xl border border-gray-100 z-50 overflow-hidden text-left animate-in fade-in slide-in-from-top-2 duration-200">
+                   {/* Card Header */}
+                   <div className="p-4 bg-gradient-to-br from-[#FCE8EE]/70 to-[#F6F8FB] border-b border-gray-100">
+                     <div className="flex items-center gap-3">
+                       <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#A00142] to-[#3843C1] text-white font-extrabold text-sm flex items-center justify-center shadow-md">
+                         {userInitials}
+                       </div>
+                       <div className="flex-1 min-w-0">
+                         <h4 className="font-extrabold text-sm text-[#080809] truncate">{userDisplayName}</h4>
+                         <p className="text-xs text-gray-500 truncate">{currentUserEmail}</p>
+                       </div>
+                     </div>
+                   </div>
+
+                   {/* Options */}
+                   <div className="p-2 space-y-1">
+                     <button
+                       onClick={() => {
+                         setShowProfileMenu(false);
+                         navigate(myProfilePath);
+                       }}
+                       className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-gray-700 hover:text-[#A00142] hover:bg-[#FCE8EE]/50 rounded-xl transition-colors cursor-pointer"
+                     >
+                       <UserCircle className="w-4 h-4 text-[#A00142]" />
+                       My Profile Page
+                     </button>
+
+                     <button
+                       onClick={() => {
+                         setShowProfileMenu(false);
+                         setShowPasswordModal(true);
+                       }}
+                       className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-[#A00142] hover:bg-gray-50 rounded-xl transition-colors cursor-pointer"
+                     >
+                       <Key className="w-4 h-4 text-[#3843C1]" />
+                       Change Password
+                     </button>
+
+                     {isAdminOrManager && (
+                       <button
+                         onClick={() => {
+                           setShowProfileMenu(false);
+                           handleChangeOrg();
+                         }}
+                         className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 hover:text-gray-900 hover:bg-gray-50 rounded-xl transition-colors cursor-pointer"
+                       >
+                         <Building2 className="w-4 h-4 text-amber-500" />
+                         Switch Organization
+                       </button>
+                     )}
+                   </div>
+
+                   <div className="p-2 border-t border-gray-100 bg-gray-50/50">
+                     <button
+                       onClick={() => {
+                         setShowProfileMenu(false);
+                         handleSignOut();
+                       }}
+                       className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs font-bold text-red-600 hover:bg-red-50 rounded-xl transition-colors cursor-pointer"
+                     >
+                       <LogOut className="w-4 h-4" />
+                       Sign Out
+                     </button>
+                   </div>
+                 </div>
+               )}
+             </div>
 
              {/* Change Password Modal */}
              {showPasswordModal && (

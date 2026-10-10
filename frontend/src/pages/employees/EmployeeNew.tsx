@@ -151,9 +151,9 @@ export default function EmployeeNew() {
             type="button"
             onClick={() => seedDefaultsMutation.mutate()}
             disabled={seedDefaultsMutation.isPending}
-            className="btn bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 flex items-center gap-2 text-xs"
+            className="px-4 py-2 bg-[#FCE8EE] text-[#A00142] hover:bg-[#A00142] hover:text-white border border-[#A00142]/40 rounded-lg font-bold flex items-center gap-2 text-xs transition-all duration-200 shadow-xs group cursor-pointer"
           >
-            <Sparkles className="w-4 h-4 text-purple-600" />
+            <Sparkles className="w-4 h-4 text-[#A00142] group-hover:text-white transition-colors" />
             {seedDefaultsMutation.isPending ? 'Seeding...' : 'Seed Standard Depts & Designations'}
           </button>
         )}

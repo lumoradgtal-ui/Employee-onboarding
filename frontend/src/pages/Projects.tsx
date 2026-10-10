@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store';
 import { api } from '../lib/api';
@@ -19,6 +19,7 @@ export default function Projects() {
   const [employeeId, setEmployeeId] = useState('');
   const [allocationPct, setAllocationPct] = useState('100');
   const [submitError, setSubmitError] = useState('');
+  const [isManagerOrAdmin, setIsManagerOrAdmin] = useState(false);
 
   // User session & role evaluation
   const { data: userSession } = useQuery({
@@ -27,11 +28,6 @@ export default function Projects() {
   });
   const currentUserEmail = userSession?.data?.session?.user?.email?.toLowerCase();
   const currentUserId = userSession?.data?.session?.user?.id;
-
-  const { data: orgs = [] } = useQuery({
-    queryKey: ['organizations'],
-    queryFn: () => api('/api/organizations'),
-  });
 
   const { data: projects = [], isLoading: loadingProj } = useQuery({
     queryKey: ['projects', orgId],
@@ -57,14 +53,20 @@ export default function Projects() {
     (e.user_id && e.user_id === currentUserId)
   );
 
-  const currentOrgMember = orgs.find((o: any) => o.organization_id === orgId);
-  const orgRole = currentOrgMember?.role?.toLowerCase() || '';
-
-  const isManagerOrAdmin = ['owner', 'admin', 'manager'].includes(orgRole) ||
-    currentUserEmail === 'testadmin@gmail.com' ||
-    currentUserEmail?.includes('admin') ||
-    currentUserEmail?.includes('manager') ||
-    myEmp?.role === 'admin' || myEmp?.role === 'manager';
+  useEffect(() => {
+    if (orgId) {
+      api('/api/organizations').then((orgs: any[]) => {
+        const currentOrg = orgs.find((o: any) => o.organization_id === orgId || o.id === orgId);
+        const role = currentOrg?.role?.toLowerCase() || '';
+        const isMgr = ['owner', 'admin', 'hr', 'manager'].includes(role) ||
+                      currentUserEmail === 'testadmin@gmail.com' ||
+                      myEmp?.role === 'admin' || myEmp?.role === 'manager';
+        setIsManagerOrAdmin(isMgr);
+      }).catch(() => {
+        setIsManagerOrAdmin(false);
+      });
+    }
+  }, [orgId, currentUserEmail, myEmp]);
 
   // Displayed projects: Managers/Admins see all; Regular employees see only projects they are allocated to
   const displayedProjects = isManagerOrAdmin
@@ -100,6 +102,7 @@ export default function Projects() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['project_allocations', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', orgId] });
       setShowAllocModal(false);
       setSelectedProjId('');
       setEmployeeId('');

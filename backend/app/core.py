@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     supabase_anon_key: str
     supabase_service_role_key: str
     cors_origins: str = "*"
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=("backend/.env", ".env"), extra="ignore")
 
 settings = Settings()
 admin: Client = create_client(settings.supabase_url, settings.supabase_service_role_key)

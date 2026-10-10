@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
-import { Laptop, Plus, UserPlus, CheckCircle, Clock, Lock, ShieldAlert } from 'lucide-react';
+import { Laptop, Plus, UserPlus, CheckCircle, Clock, Lock, ShieldAlert, RotateCcw } from 'lucide-react';
 
 export default function Assets() {
   const { orgId } = useAppStore();
@@ -18,6 +18,7 @@ export default function Assets() {
   const [selectedAssetId, setSelectedAssetId] = useState('');
   const [employeeId, setEmployeeId] = useState('');
   const [submitError, setSubmitError] = useState('');
+  const [isManagerOrAdmin, setIsManagerOrAdmin] = useState(false);
 
   // User session & role evaluation
   const { data: userSession } = useQuery({
@@ -26,11 +27,6 @@ export default function Assets() {
   });
   const currentUserEmail = userSession?.data?.session?.user?.email?.toLowerCase();
   const currentUserId = userSession?.data?.session?.user?.id;
-
-  const { data: orgs = [] } = useQuery({
-    queryKey: ['organizations'],
-    queryFn: () => api('/api/organizations'),
-  });
 
   const { data: assets = [], isLoading } = useQuery({
     queryKey: ['assets', orgId],
@@ -56,14 +52,20 @@ export default function Assets() {
     (e.user_id && e.user_id === currentUserId)
   );
 
-  const currentOrgMember = orgs.find((o: any) => o.organization_id === orgId);
-  const orgRole = currentOrgMember?.role?.toLowerCase() || '';
-
-  const isManagerOrAdmin = ['owner', 'admin', 'manager'].includes(orgRole) ||
-    currentUserEmail === 'testadmin@gmail.com' ||
-    currentUserEmail?.includes('admin') ||
-    currentUserEmail?.includes('manager') ||
-    myEmp?.role === 'admin' || myEmp?.role === 'manager';
+  useEffect(() => {
+    if (orgId) {
+      api('/api/organizations').then((orgs: any[]) => {
+        const currentOrg = orgs.find((o: any) => o.organization_id === orgId || o.id === orgId);
+        const role = currentOrg?.role?.toLowerCase() || '';
+        const isMgr = ['owner', 'admin', 'hr', 'manager'].includes(role) ||
+                      currentUserEmail === 'testadmin@gmail.com' ||
+                      myEmp?.role === 'admin' || myEmp?.role === 'manager';
+        setIsManagerOrAdmin(isMgr);
+      }).catch(() => {
+        setIsManagerOrAdmin(false);
+      });
+    }
+  }, [orgId, currentUserEmail, myEmp]);
 
   // Displayed Assets: Managers/Admins see full inventory; Regular employees see only assets assigned to them
   const displayedAssets = isManagerOrAdmin
@@ -91,13 +93,24 @@ export default function Assets() {
   });
 
   const createAssignMutation = useMutation({
-    mutationFn: (data: any) =>
-      api('/api/asset_assignments', {
+    mutationFn: async (data: any) => {
+      const res = await api('/api/asset_assignments', {
         method: 'POST',
         body: JSON.stringify({ payload: { organization_id: orgId, ...data } }),
-      }),
+      });
+      try {
+        await api(`/api/assets/${data.asset_id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ payload: { organization_id: orgId, status: 'assigned' } }),
+        });
+      } catch (e) {
+        // Ignore fallback if asset update fails
+      }
+      return res;
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['asset_assignments', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['assets', orgId] });
       setShowAssignModal(false);
       setSelectedAssetId('');
       setEmployeeId('');
@@ -105,6 +118,23 @@ export default function Assets() {
     },
     onError: (err: any) => {
       setSubmitError(err.message || 'Failed to assign asset');
+    }
+  });
+
+  const unassignMutation = useMutation({
+    mutationFn: async ({ assignmentId, assetId }: { assignmentId: string; assetId: string }) => {
+      await api(`/api/asset_assignments/${assignmentId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ payload: { organization_id: orgId, status: 'returned' } }),
+      });
+      await api(`/api/assets/${assetId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ payload: { organization_id: orgId, status: 'available' } }),
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asset_assignments', orgId] });
+      queryClient.invalidateQueries({ queryKey: ['assets', orgId] });
     }
   });
 
@@ -212,6 +242,7 @@ export default function Assets() {
                   <th className="py-3 px-4 text-xs font-semibold text-secondary uppercase">Serial Number</th>
                   <th className="py-3 px-4 text-xs font-semibold text-secondary uppercase">Assigned To</th>
                   <th className="py-3 px-4 text-xs font-semibold text-secondary uppercase">Status</th>
+                  {isManagerOrAdmin && <th className="py-3 px-4 text-xs font-semibold text-secondary uppercase text-right">Actions</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -242,6 +273,30 @@ export default function Assets() {
                           {isMe ? 'Assigned to You' : emp ? 'Assigned' : 'Available'}
                         </span>
                       </td>
+                      {isManagerOrAdmin && (
+                        <td className="py-3 px-4 text-right">
+                          {assign ? (
+                            <button
+                              onClick={() => unassignMutation.mutate({ assignmentId: assign.id, assetId: ast.id })}
+                              disabled={unassignMutation.isPending}
+                              className="text-xs text-red-600 hover:text-red-800 font-medium border border-red-200 hover:bg-red-50 px-2.5 py-1 rounded inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <RotateCcw className="w-3 h-3" /> Unassign
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                setSelectedAssetId(ast.id);
+                                setSubmitError('');
+                                setShowAssignModal(true);
+                              }}
+                              className="text-xs text-purple-700 hover:text-purple-900 font-medium border border-purple-200 hover:bg-purple-50 px-2.5 py-1 rounded inline-flex items-center gap-1 cursor-pointer"
+                            >
+                              <UserPlus className="w-3 h-3" /> Assign
+                            </button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
