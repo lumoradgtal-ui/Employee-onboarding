@@ -66,7 +66,7 @@ class OrgUpdate(BaseModel):
 
 @app.patch("/api/organization/{org_id}")
 def update_organization(org_id: str, body: OrgUpdate, user=Depends(get_user)):
-    require_role(user.id, org_id, ["owner", "admin"])
+    require_role(user.id, org_id, ["owner", "admin", "hr", "manager"])
     res = admin.table("organizations").update({"name": body.name.strip()}).eq("id", org_id).execute().data
     if not res:
         raise HTTPException(404, "Organization not found")
