@@ -223,6 +223,53 @@ def provision_employee_account(employee_id: str, org_id: str, user=Depends(get_u
     except Exception as ex:
         raise HTTPException(500, f"Account creation failed: {str(ex)}")
 
+class RegisterConfirmRequest(BaseModel):
+    email: str
+    name: Optional[str] = None
+    password: Optional[str] = None
+
+@app.post("/api/auth/register-confirm")
+def register_confirm(body: RegisterConfirmRequest):
+    email_clean = body.email.strip().lower()
+    if not email_clean:
+        raise HTTPException(400, "Email address is required.")
+        
+    try:
+        existing_users = admin.auth.admin.list_users()
+        user_match = next((u for u in existing_users if u.email and u.email.lower() == email_clean), None)
+        
+        if not user_match and body.password:
+            user_match = admin.auth.admin.create_user({
+                "email": email_clean,
+                "password": body.password,
+                "email_confirm": True,
+                "user_metadata": {"full_name": body.name or email_clean}
+            }).user
+
+        if user_match:
+            admin.auth.admin.update_user_by_id(user_match.id, {"email_confirm": True})
+            try:
+                admin.table("profiles").upsert({
+                    "id": user_match.id,
+                    "full_name": body.name or user_match.user_metadata.get("full_name") or email_clean,
+                    "email": email_clean
+                }).execute()
+            except Exception:
+                pass
+            
+            subject = "🎉 Welcome to HRMS Platform! Account Confirmed"
+            body_text = f"Dear {body.name or 'User'},\n\nYour HRMS Account ({email_clean}) has been successfully created and verified!\n\nYou can sign in to your HRMS portal at:\nhttp://localhost:5173/login\n\nBest regards,\nHRMS Team"
+            send_email_notification(email_clean, subject, body_text)
+            
+            return {"success": True, "user_id": user_match.id, "message": "User registration confirmed & email dispatched."}
+            
+        raise HTTPException(404, "User account not found.")
+    except HTTPException:
+        raise
+    except Exception as ex:
+        print(f"[REGISTER CONFIRM EXCEPTION] {ex}")
+        raise HTTPException(500, f"Registration confirmation failed: {str(ex)}")
+
 class ConfirmUserRequest(BaseModel):
     email: str
 

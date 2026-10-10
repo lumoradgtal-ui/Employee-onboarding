@@ -22,13 +22,38 @@ export default function Login() {
 
     try {
       if (mode === 'signup') {
-        const { error } = await supabase.auth.signUp({
-          email,
+        let signUpErr = null;
+        try {
+          const { error } = await supabase.auth.signUp({
+            email: email.trim(),
+            password,
+            options: { data: { full_name: name, portal_type: portalType } },
+          });
+          if (error) signUpErr = error;
+        } catch (e: any) {
+          signUpErr = e;
+        }
+
+        try {
+          await api('/api/auth/register-confirm', {
+            method: 'POST',
+            body: JSON.stringify({ email: email.trim(), name: name.trim(), password }),
+          });
+        } catch (e) {
+          if (signUpErr) throw signUpErr;
+        }
+
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
           password,
-          options: { data: { full_name: name, portal_type: portalType } },
         });
-        if (error) throw error;
-        setMessage('Registration successful! Please check your email for confirmation or sign in.');
+
+        if (!signInErr) {
+          localStorage.setItem('hrms_last_portal', portalType);
+        } else {
+          setMessage('Registration successful & welcome verification email sent to your inbox! You can now sign in.');
+          setMode('login');
+        }
       } else if (mode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) {
