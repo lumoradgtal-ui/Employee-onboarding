@@ -31,7 +31,22 @@ export default function Login() {
         setMessage('Registration successful! Please check your email for confirmation or sign in.');
       } else if (mode === 'login') {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        if (error) {
+          if ((error.message || '').toLowerCase().includes('email not confirmed')) {
+            try {
+              await api('/api/auth/confirm-user', {
+                method: 'POST',
+                body: JSON.stringify({ email: email.trim() }),
+              });
+              const retry = await supabase.auth.signInWithPassword({ email, password });
+              if (retry.error) throw retry.error;
+            } catch (confirmErr: any) {
+              throw error;
+            }
+          } else {
+            throw error;
+          }
+        }
         localStorage.setItem('hrms_last_portal', portalType);
       } else if (mode === 'reset') {
         try {

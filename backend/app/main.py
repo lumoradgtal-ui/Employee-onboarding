@@ -223,6 +223,26 @@ def provision_employee_account(employee_id: str, org_id: str, user=Depends(get_u
     except Exception as ex:
         raise HTTPException(500, f"Account creation failed: {str(ex)}")
 
+class ConfirmUserRequest(BaseModel):
+    email: str
+
+@app.post("/api/auth/confirm-user")
+def confirm_user(body: ConfirmUserRequest):
+    email_clean = body.email.strip().lower()
+    if not email_clean:
+        raise HTTPException(400, "Email address is required.")
+    try:
+        existing_users = admin.auth.admin.list_users()
+        user_match = next((u for u in existing_users if u.email and u.email.lower() == email_clean), None)
+        if user_match:
+            admin.auth.admin.update_user_by_id(user_match.id, {"email_confirm": True})
+            return {"success": True, "message": "Email confirmed successfully."}
+        raise HTTPException(404, "User not found.")
+    except HTTPException:
+        raise
+    except Exception as ex:
+        raise HTTPException(500, f"Auto-confirm failed: {str(ex)}")
+
 class ForgotPasswordRequest(BaseModel):
     email: str
 
