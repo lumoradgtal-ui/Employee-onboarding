@@ -280,9 +280,21 @@ def forgot_password(body: ForgotPasswordRequest):
             user_id = auth_user.id
             admin.table("employees").update({"user_id": user_id}).eq("id", emp_match["id"]).execute()
 
-        subject = "🔑 HRMS Portal Password Reset Instructions"
+        reset_link = "http://localhost:5173/login"
+        try:
+            link_res = admin.auth.admin.generate_link({
+                "type": "recovery",
+                "email": email_clean,
+                "options": {"redirect_to": "http://localhost:5173/login"}
+            })
+            if hasattr(link_res, "properties") and hasattr(link_res.properties, "action_link"):
+                reset_link = link_res.properties.action_link
+        except Exception as l_err:
+            print(f"[RECOVERY LINK GEN EXCEPTION] {l_err}")
+
+        subject = "🔑 HRMS Portal Password Reset Link"
         emp_name = emp_match.get("first_name", "User") if emp_match else "User"
-        body_text = f"Dear {emp_name},\n\nA password reset request was processed for your HRMS account ({email_clean}).\n\nYour temporary password is:\n{temp_password}\n\nPlease sign in to your HRMS Portal using this temporary password. We recommend updating your password after logging in.\n\nLogin URL: http://localhost:5173/login\n\nBest regards,\nHRMS Security Team"
+        body_text = f"Dear {emp_name},\n\nA password reset request was issued for your HRMS account ({email_clean}).\n\nClick the direct link below to reset your password:\n{reset_link}\n\nOr sign in using your temporary password:\n{temp_password}\n\nLogin URL: http://localhost:5173/login\n\nBest regards,\nHRMS Security Team"
         
         send_email_notification(email_clean, subject, body_text)
         

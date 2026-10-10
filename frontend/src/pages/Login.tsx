@@ -49,19 +49,20 @@ export default function Login() {
         }
         localStorage.setItem('hrms_last_portal', portalType);
       } else if (mode === 'reset') {
+        const { error: supaErr } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: window.location.origin + '/login',
+        });
         try {
-          const res = await api('/api/auth/forgot-password', {
+          await api('/api/auth/forgot-password', {
             method: 'POST',
             body: JSON.stringify({ email: email.trim() }),
           });
-          setMessage(res.message || `Password reset instructions and temporary password dispatched to ${email}. Check your inbox!`);
-        } catch (backendErr: any) {
-          const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: window.location.origin + '/reset-password',
-          });
-          if (error) throw backendErr?.message || error;
-          setMessage('Password reset instructions sent to your email.');
+        } catch (e) {}
+
+        if (supaErr) {
+          throw supaErr;
         }
+        setMessage(`Password reset link and temporary credentials dispatched directly to ${email.trim()}! Please check your inbox.`);
       }
     } catch (err: any) {
       setError(err.message || 'An error occurred during authentication.');
