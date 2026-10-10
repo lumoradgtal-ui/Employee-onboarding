@@ -2,6 +2,7 @@ import smtplib
 import os
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -9,10 +10,13 @@ from typing import Any, Optional
 from datetime import date, datetime
 from .core import admin, settings, get_user, require_org, require_role
 
+load_dotenv()
+
 app = FastAPI(title="HRMS Platform API", version="1.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=[x.strip() for x in settings.cors_origins.split(',')], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 def send_email_notification(to_email: str, subject: str, body_text: str, body_html: Optional[str] = None):
+    load_dotenv()
     smtp_host = os.getenv("SMTP_HOST")
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
@@ -24,9 +28,9 @@ def send_email_notification(to_email: str, subject: str, body_text: str, body_ht
             msg['From'] = smtp_user
             msg['To'] = to_email
             msg['Subject'] = subject
-            msg.attach(MIMEText(body_text, 'plain'))
+            msg.attach(MIMEText(body_text, 'plain', 'utf-8'))
             if body_html:
-                msg.attach(MIMEText(body_html, 'html'))
+                msg.attach(MIMEText(body_html, 'html', 'utf-8'))
             with smtplib.SMTP(smtp_host, smtp_port) as server:
                 server.starttls()
                 server.login(smtp_user, smtp_pass)
