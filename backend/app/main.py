@@ -48,7 +48,7 @@ def send_email_notification(to_email: str, subject: str, body_text: str, body_ht
 
 class OrgCreate(BaseModel): name: str = Field(min_length=2, max_length=160)
 class EmployeeCreate(BaseModel):
-    organization_id: str; employee_code: Optional[str]=None; first_name: str; last_name: Optional[str]=None; work_email: Optional[str]=None; phone: Optional[str]=None; date_of_joining: Optional[date]=None; department_id: Optional[str]=None; designation_id: Optional[str]=None; manager_id: Optional[str]=None; employment_type: str="full_time"; status: str="pre_onboarding"
+    organization_id: str; employee_code: Optional[str]=None; first_name: str; last_name: Optional[str]=None; work_email: Optional[str]=None; personal_email: Optional[str]=None; phone: Optional[str]=None; date_of_joining: Optional[date]=None; department_id: Optional[str]=None; designation_id: Optional[str]=None; manager_id: Optional[str]=None; employment_type: str="full_time"; status: str="pre_onboarding"
 class EmployeeUpdate(BaseModel):
     first_name: Optional[str]=None; last_name: Optional[str]=None; work_email: Optional[str]=None; personal_email: Optional[str]=None; phone: Optional[str]=None; date_of_joining: Optional[date]=None; date_of_birth: Optional[date]=None; gender: Optional[str]=None; department_id: Optional[str]=None; designation_id: Optional[str]=None; manager_id: Optional[str]=None; employment_type: Optional[str]=None; status: Optional[str]=None; location: Optional[str]=None; emergency_contact: Optional[dict[str, Any]]=None
 class RequestModel(BaseModel): payload: dict[str, Any]
@@ -227,12 +227,165 @@ def provision_employee_account(employee_id: str, org_id: str, user=Depends(get_u
             "type": "account_provisioned"
         }).execute()
 
+        # Fetch organization name for email branding
+        org_name = "HRMS Platform"
+        try:
+            org_res = admin.table("organizations").select("name").eq("id", org_id).maybe_single().execute().data
+            if org_res and org_res.get("name"):
+                org_name = org_res["name"]
+        except Exception as oe:
+            print(f"[WARN] Error fetching org name: {oe}")
+
+        full_name = f"{emp.get('first_name') or ''} {emp.get('last_name') or ''}".strip() or "Employee"
+        employee_code = emp.get("employee_code") or "N/A"
+        portal_url = os.getenv("FRONTEND_URL", "http://localhost:5173/login")
+
+        body_text = f"""Hello {full_name},
+
+Welcome to {org_name}!
+
+Your employee portal account has been created on the HRMS Platform. You can now log in to view your profile, manage attendance, submit leave requests, track projects, and access company resources.
+
+Here are your account login details:
+------------------------------------------------------------
+Company / Organization: {org_name}
+Employee ID:            {employee_code}
+Login Email:            {target_email}
+Temporary Password:     {temp_password}
+Portal Login URL:       {portal_url}
+------------------------------------------------------------
+
+Quick Instructions to Log In:
+1. Open the portal login page: {portal_url}
+2. Enter your login email ({target_email}) and temporary password ({temp_password}).
+3. Once logged in, click "Change Password" in the top bar to set your own password.
+
+If you have any questions or require assistance, please contact your HR administrator.
+
+Best regards,
+{org_name} HR Team
+"""
+
+        body_html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Welcome to {org_name}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f1f5f9; padding: 36px 16px;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 580px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 16px rgba(0,0,0,0.06); border: 1px solid #e2e8f0;">
+          <tr>
+            <td style="background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%); padding: 32px 36px; text-align: left;">
+              <span style="display: inline-block; background-color: rgba(255,255,255,0.2); color: #ffffff; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; padding: 4px 10px; border-radius: 20px; margin-bottom: 12px;">Employee Portal Access</span>
+              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 800; line-height: 1.2;">Welcome to {org_name}</h1>
+              <p style="margin: 6px 0 0; color: #e0e7ff; font-size: 14px;">Your official employee login account is ready</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 32px 36px;">
+              <p style="margin: 0 0 16px; font-size: 15px; line-height: 1.6;">Hello <strong>{full_name}</strong>,</p>
+              <p style="margin: 0 0 24px; font-size: 14px; line-height: 1.6; color: #475569;">
+                An employee account has been created for you at <strong>{org_name}</strong>. You can now access the HRMS portal to manage your profile, record attendance, apply for leaves, access documents, and more.
+              </p>
+              <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 24px;">
+                <tr>
+                  <td style="padding: 20px;">
+                    <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #64748b; margin-bottom: 14px;">Your Login Credentials</div>
+                    <table width="100%" cellpadding="6" cellspacing="0" style="font-size: 13px;">
+                      <tr>
+                        <td width="38%" style="color: #64748b; font-weight: 600;">Organization:</td>
+                        <td style="color: #0f172a; font-weight: 700;">{org_name}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #64748b; font-weight: 600;">Employee ID:</td>
+                        <td style="color: #0f172a; font-weight: 700; font-family: monospace; font-size: 14px;">{employee_code}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #64748b; font-weight: 600;">Login Email:</td>
+                        <td style="color: #0f172a; font-weight: 700; font-family: monospace; font-size: 14px;">{target_email}</td>
+                      </tr>
+                      <tr>
+                        <td style="color: #64748b; font-weight: 600;">Temporary Password:</td>
+                        <td>
+                          <span style="background-color: #ede9fe; color: #6d28d9; font-weight: 800; font-family: monospace; font-size: 14px; padding: 3px 8px; border-radius: 6px; display: inline-block;">{temp_password}</span>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+              </table>
+              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 28px;">
+                <tr>
+                  <td align="center">
+                    <a href="{portal_url}" target="_blank" style="display: inline-block; background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%); color: #ffffff; text-decoration: none; font-size: 14px; font-weight: 700; padding: 14px 32px; border-radius: 8px; box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);">
+                      Log In to HRMS Portal &rarr;
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <div style="background-color: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 16px; margin-bottom: 24px;">
+                <div style="font-size: 13px; font-weight: 700; color: #166534; margin-bottom: 8px;">Getting Started in 3 Easy Steps:</div>
+                <ol style="margin: 0; padding-left: 20px; font-size: 13px; color: #15803d; line-height: 1.6;">
+                  <li>Click the login button above or open <a href="{portal_url}" style="color: #166534; font-weight: 600;">{portal_url}</a>.</li>
+                  <li>Sign in using your email address and temporary password.</li>
+                  <li>Click <strong>Change Password</strong> in the header anytime to choose your own secure password.</li>
+                </ol>
+              </div>
+              <p style="margin: 0; font-size: 13px; color: #64748b; line-height: 1.5;">
+                Need help? Please reply to this email or reach out to your HR administrator.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 20px 36px; text-align: center; font-size: 12px; color: #94a3b8;">
+              &copy; {datetime.utcnow().year} {org_name}. All rights reserved.<br>
+              This is an automated notification containing your employee credentials.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+"""
+
+        email_sent = False
+        try:
+            email_subject = f"Welcome to {org_name} - Your Login Details & Temporary Password"
+            email_sent = send_email_notification(
+                to_email=target_email,
+                subject=email_subject,
+                body_text=body_text,
+                body_html=body_html
+            )
+            
+            personal_email = emp.get("personal_email")
+            if personal_email and str(personal_email).strip().lower() != target_email.lower():
+                try:
+                    send_email_notification(
+                        to_email=str(personal_email).strip(),
+                        subject=email_subject,
+                        body_text=body_text,
+                        body_html=body_html
+                    )
+                except Exception as p_err:
+                    print(f"[WARN] Error sending credentials to personal email: {p_err}")
+        except Exception as e_err:
+            print(f"[EMAIL SEND ERROR] {e_err}")
+
         return {
             "success": True,
             "email": target_email,
             "temp_password": temp_password,
+            "employee_code": employee_code,
+            "org_name": org_name,
+            "email_sent": bool(email_sent),
             "user_id": auth_user.id,
-            "message": f"Login account provisioned successfully for {target_email}."
+            "message": f"Login credentials sent directly to {target_email}." if email_sent else f"Login account provisioned for {target_email}."
         }
     except Exception as ex:
         raise HTTPException(500, f"Account creation failed: {str(ex)}")

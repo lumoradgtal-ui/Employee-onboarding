@@ -7,7 +7,8 @@ import { supabase } from '../../lib/supabase';
 import { 
   ArrowLeft, User, Briefcase, Clock, Calendar, Shield, CreditCard, Activity, FileText, 
   Edit, Save, Lock, Building2, MapPin, Landmark, Heart, FileCheck, Phone, Mail, Award, ShieldAlert,
-  Folder, FolderPlus, Upload, Trash2, ExternalLink, File, CheckCircle2, Plus, ChevronRight
+  Folder, FolderPlus, Upload, Trash2, ExternalLink, File, CheckCircle2, Plus, ChevronRight,
+  Sparkles, Copy, Check
 } from 'lucide-react';
 
 const MAIN_TABS = [
@@ -329,6 +330,7 @@ export default function EmployeeProfile() {
   };
 
   const [provisionResult, setProvisionResult] = useState<any>(null);
+  const [provCopied, setProvCopied] = useState(false);
 
   const provisionMutation = useMutation({
     mutationFn: () =>
@@ -337,7 +339,11 @@ export default function EmployeeProfile() {
       }),
     onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['employee', orgId, id] });
-      setProvisionResult(res);
+      setProvisionResult({
+        ...res,
+        name: `${emp?.first_name || ''} ${emp?.last_name || ''}`.trim(),
+        employee_code: res.employee_code || emp?.employee_code,
+      });
     },
     onError: (err: any) => {
       alert(err.message || 'Provisioning failed');
@@ -441,7 +447,7 @@ export default function EmployeeProfile() {
               className="px-4 py-2 bg-[#FCE8EE] text-[#A00142] hover:bg-[#A00142] hover:text-white border border-[#A00142]/40 rounded-lg font-bold flex items-center gap-2 text-xs transition-all duration-200 shadow-xs group cursor-pointer"
             >
               <Shield className="w-4 h-4 text-[#A00142] group-hover:text-white transition-colors" />
-              {provisionMutation.isPending ? 'Provisioning...' : 'Provision Login Account'}
+              {provisionMutation.isPending ? 'Sending...' : (emp?.user_id ? 'Resend Credentials Email' : 'Provision Login Account')}
             </button>
           )}
 
@@ -1652,6 +1658,108 @@ export default function EmployeeProfile() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Generated Credentials Modal */}
+      {provisionResult && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 space-y-5 border border-border text-left animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <h3 className="text-lg font-bold text-text flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-purple-600" />
+                Employee Account Provisioned & Emailed!
+              </h3>
+            </div>
+
+            {provisionResult.email_sent ? (
+              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                  <Mail className="w-4 h-4 text-emerald-700" />
+                </div>
+                <div className="space-y-1">
+                  <div className="font-bold flex items-center gap-1.5 text-emerald-900">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    Full Credentials Sent Directly to Email!
+                  </div>
+                  <p className="text-emerald-800 leading-relaxed">
+                    A welcome email containing Employee ID, Portal Link, and Temporary Password was dispatched directly to <strong>{provisionResult.email}</strong>. The employee can open their email to log in immediately.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl text-xs text-purple-950 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center shrink-0">
+                  <Mail className="w-4 h-4 text-purple-700" />
+                </div>
+                <div className="space-y-1">
+                  <div className="font-bold text-purple-950">Portal Account Activated</div>
+                  <p className="text-purple-800 leading-relaxed">
+                    Account provisioned for <strong>{provisionResult.name}</strong> ({provisionResult.email}). You can copy the credentials below or check SMTP dispatch logs.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2.5 bg-gray-50/80 p-4 rounded-xl border border-border text-xs">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-gray-400 block text-[10px] uppercase tracking-wider font-semibold">Employee ID</span>
+                  <span className="font-mono font-bold text-text">{provisionResult.employee_code || emp?.employee_code || 'Assigned'}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400 block text-[10px] uppercase tracking-wider font-semibold">Organization</span>
+                  <span className="font-semibold text-text truncate block">{provisionResult.org_name || 'HRMS'}</span>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-gray-200">
+                <span className="text-gray-400 block text-[10px] uppercase tracking-wider font-semibold">Portal Login Email</span>
+                <span className="font-bold text-text text-sm select-all font-mono">{provisionResult.email}</span>
+              </div>
+
+              <div className="pt-2 border-t border-gray-200">
+                <span className="text-gray-400 block text-[10px] uppercase tracking-wider font-semibold">Initial Temporary Password</span>
+                <span className="font-bold text-purple-700 text-sm select-all bg-purple-100/90 border border-purple-200 px-2 py-0.5 rounded inline-block mt-0.5 font-mono">
+                  {provisionResult.temp_password}
+                </span>
+              </div>
+
+              <div className="pt-2 border-t border-gray-200">
+                <span className="text-gray-400 block text-[10px] uppercase tracking-wider font-semibold">Login Portal URL</span>
+                <span className="text-secondary font-mono text-[11px] block select-all">http://localhost:5173/login</span>
+              </div>
+            </div>
+
+            <div className="p-3 bg-purple-50/80 rounded-xl text-xs text-purple-900 space-y-1 border border-purple-100">
+              <p className="font-bold">Next Steps for Employee:</p>
+              <p>1. Open their inbox at <strong>{provisionResult.email}</strong> and view the welcome email.</p>
+              <p>2. Sign in with the temporary password and click <strong>"Change Password"</strong> to set their custom password.</p>
+            </div>
+
+            <div className="flex justify-between items-center pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const text = `Welcome to ${provisionResult.org_name || 'HRMS'}!\nYour Portal Login Account has been created.\n\nOrganization: ${provisionResult.org_name || 'HRMS'}\nEmployee ID: ${provisionResult.employee_code || emp?.employee_code || ''}\nLogin Portal: http://localhost:5173/login\nEmail ID: ${provisionResult.email}\nTemporary Password: ${provisionResult.temp_password}\n\nPlease log in and update your temporary password anytime.`;
+                  navigator.clipboard.writeText(text);
+                  setProvCopied(true);
+                  setTimeout(() => setProvCopied(false), 2500);
+                }}
+                className="btn-outline text-xs px-3.5 py-2 text-purple-700 hover:bg-purple-50 flex items-center gap-1.5"
+              >
+                {provCopied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                {provCopied ? 'Copied to Clipboard!' : 'Copy Credentials & Invite'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setProvisionResult(null)}
+                className="btn text-xs px-5 py-2"
+              >
+                Done / Close
+              </button>
+            </div>
           </div>
         </div>
       )}
