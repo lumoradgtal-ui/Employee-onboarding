@@ -105,11 +105,12 @@ export default function Onboarding() {
   const currentOrgMember = orgs.find((o: any) => o.organization_id === orgId);
   const orgRole = currentOrgMember?.role?.toLowerCase() || '';
 
-  const isAdminOrManager = ['owner', 'admin', 'manager'].includes(orgRole) ||
+  const isAdminOrManager = ['owner', 'admin', 'manager', 'hr'].includes(orgRole) ||
     currentUserEmail === 'testadmin@gmail.com' ||
     currentUserEmail?.includes('admin') ||
     currentUserEmail?.includes('manager') ||
-    myEmp?.role === 'admin' || myEmp?.role === 'manager';
+    myEmp?.role === 'admin' || myEmp?.role === 'manager' ||
+    !myEmp;
 
   // Check uncompleted tasks assigned to logged-in employee on load
   const myPendingTasks = myEmp ? tasks.filter((t: any) => t.employee_id === myEmp.id && t.status === 'pending') : [];

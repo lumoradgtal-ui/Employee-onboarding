@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
+import { useUserRole } from '../lib/useUserRole';
 import { ShieldCheck, Plus, CheckCircle, AlertTriangle, AlertCircle, Lock } from 'lucide-react';
 
 export default function Probation() {
@@ -15,38 +16,13 @@ export default function Probation() {
   const [notes, setNotes] = useState('');
   const [submitError, setSubmitError] = useState('');
 
-  // Fetch current Supabase user session
-  const { data: userSession } = useQuery({
-    queryKey: ['userSession'],
-    queryFn: () => supabase.auth.getSession(),
-  });
-
-  const currentUserEmail = userSession?.data?.session?.user?.email?.toLowerCase();
-  const currentUserId = userSession?.data?.session?.user?.id;
+  const { currentUserEmail, currentUserId, isAdminOrManager, myEmp, employees } = useUserRole();
 
   const { data: records = [], isLoading } = useQuery({
     queryKey: ['probation_records', orgId],
     queryFn: () => api(`/api/probation_records?org_id=${orgId}`),
     enabled: !!orgId,
   });
-
-  const { data: employees = [] } = useQuery({
-    queryKey: ['employees', orgId],
-    queryFn: () => api(`/api/employees?org_id=${orgId}`),
-    enabled: !!orgId,
-  });
-
-  const myEmp = employees.find((e: any) =>
-    (e.work_email && e.work_email.toLowerCase() === currentUserEmail) ||
-    (e.personal_email && e.personal_email.toLowerCase() === currentUserEmail) ||
-    (e.user_id && e.user_id === currentUserId)
-  );
-
-  const isAdminOrManager = currentUserEmail === 'testadmin@gmail.com' || 
-    currentUserEmail?.includes('admin') || 
-    currentUserEmail?.includes('hr') || 
-    currentUserEmail?.includes('manager') ||
-    myEmp?.role === 'admin' || myEmp?.role === 'manager';
 
   const createMutation = useMutation({
     mutationFn: (data: any) =>

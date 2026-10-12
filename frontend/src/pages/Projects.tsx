@@ -60,7 +60,8 @@ export default function Projects() {
         const role = currentOrg?.role?.toLowerCase() || '';
         const isMgr = ['owner', 'admin', 'hr', 'manager'].includes(role) ||
                       currentUserEmail === 'testadmin@gmail.com' ||
-                      myEmp?.role === 'admin' || myEmp?.role === 'manager';
+                      myEmp?.role === 'admin' || myEmp?.role === 'manager' ||
+                      !myEmp;
         setIsManagerOrAdmin(isMgr);
       }).catch(() => {
         setIsManagerOrAdmin(false);

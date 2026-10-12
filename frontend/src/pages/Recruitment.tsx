@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store';
 import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
+import { useUserRole } from '../lib/useUserRole';
 import { 
   Briefcase, Users, Plus, ChevronRight, UserPlus, ShieldCheck, 
   AlertCircle, CheckCircle2, Award, Calendar, Clock, Star, FileText, Check, Search, Sparkles,
@@ -89,26 +90,7 @@ export default function Recruitment() {
     enabled: !!orgId,
   });
 
-  // User session fetch for self referrer auto-detection
-  const { data: userSession } = useQuery({
-    queryKey: ['userSession'],
-    queryFn: () => supabase.auth.getSession(),
-  });
-
-  const currentUserEmail = userSession?.data?.session?.user?.email?.toLowerCase();
-  const currentUserId = userSession?.data?.session?.user?.id;
-
-  const myEmp = employees.find((e: any) =>
-    (e.work_email && e.work_email.toLowerCase() === currentUserEmail) ||
-    (e.personal_email && e.personal_email.toLowerCase() === currentUserEmail) ||
-    (e.user_id && e.user_id === currentUserId)
-  );
-
-  const isAdminOrManager = currentUserEmail === 'testadmin@gmail.com' || 
-    currentUserEmail?.includes('admin') || 
-    currentUserEmail?.includes('hr') || 
-    currentUserEmail?.includes('manager') ||
-    myEmp?.role === 'admin' || myEmp?.role === 'manager';
+  const { currentUserEmail, currentUserId, isAdminOrManager, myEmp } = useUserRole();
 
   const { data: interviews = [] } = useQuery({
     queryKey: ['interviews', orgId],

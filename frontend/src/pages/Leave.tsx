@@ -55,7 +55,8 @@ export default function Leave() {
         const role = currentOrg?.role?.toLowerCase() || '';
         const isMgr = ['owner', 'admin', 'hr', 'manager'].includes(role) ||
                       currentUserEmail === 'testadmin@gmail.com' ||
-                      myEmp?.role === 'admin' || myEmp?.role === 'manager';
+                      myEmp?.role === 'admin' || myEmp?.role === 'manager' ||
+                      !myEmp;
         setIsOrgAdmin(isMgr);
       }).catch(() => {
         setIsOrgAdmin(false);

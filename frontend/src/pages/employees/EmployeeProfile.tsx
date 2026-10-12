@@ -4,6 +4,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store';
 import { api } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
+import { useUserRole } from '../../lib/useUserRole';
 import { 
   ArrowLeft, User, Briefcase, Clock, Calendar, Shield, CreditCard, Activity, FileText, 
   Edit, Save, Lock, Building2, MapPin, Landmark, Heart, FileCheck, Phone, Mail, Award, ShieldAlert,
@@ -353,8 +354,7 @@ export default function EmployeeProfile() {
   if (isLoading) return <div className="p-8 text-center text-secondary">Loading profile...</div>;
   if (error || !emp) return <div className="p-8 text-center text-danger">Failed to load employee profile</div>;
 
-  const currentUserEmail = userSession?.data?.session?.user?.email?.toLowerCase();
-  const currentUserId = userSession?.data?.session?.user?.id;
+  const { currentUserEmail, currentUserId, isAdminOrManager } = useUserRole();
 
   // Check if logged-in user is viewing their own profile
   const isSelf = !!(
@@ -365,10 +365,7 @@ export default function EmployeeProfile() {
     )
   );
 
-  // Manager / Admin role check
-  const isAdminOrManager = currentUserEmail === 'testadmin@gmail.com' || currentUserEmail?.includes('admin') || currentUserEmail?.includes('hr') || currentUserEmail?.includes('manager');
-
-  // Can edit if self OR manager/admin
+  // Can edit if self OR manager/admin/owner
   const canEdit = isSelf || isAdminOrManager;
 
   // Strict Privacy Enforcement: Non-manager employees can ONLY view their own profile

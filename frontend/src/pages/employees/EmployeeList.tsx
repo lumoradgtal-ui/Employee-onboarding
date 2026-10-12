@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store';
 import { api } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
+import { useUserRole } from '../../lib/useUserRole';
 import { Search, Plus, Filter, Lock } from 'lucide-react';
 
 export default function EmployeeList() {
@@ -12,14 +13,7 @@ export default function EmployeeList() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
 
-  const { data: userSession } = useQuery({
-    queryKey: ['userSession'],
-    queryFn: () => supabase.auth.getSession(),
-  });
-
-  const currentUserEmail = userSession?.data?.session?.user?.email?.toLowerCase();
-  const currentUserId = userSession?.data?.session?.user?.id;
-  const isAdminOrManager = currentUserEmail === 'testadmin@gmail.com' || currentUserEmail?.includes('admin') || currentUserEmail?.includes('hr') || currentUserEmail?.includes('manager');
+  const { currentUserEmail, currentUserId, isAdminOrManager } = useUserRole();
 
   const { data = [], isLoading } = useQuery({
     queryKey: ['employees', orgId, q, status],
