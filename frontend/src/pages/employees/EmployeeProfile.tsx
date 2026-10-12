@@ -37,6 +37,7 @@ export default function EmployeeProfile() {
   const { orgId } = useAppStore();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { currentUserEmail, currentUserId, isAdminOrManager } = useUserRole();
 
   const [activeMainTab, setActiveMainTab] = useState('profile');
   const [activeSubTab, setActiveSubTab] = useState('primary');
@@ -353,8 +354,6 @@ export default function EmployeeProfile() {
 
   if (isLoading) return <div className="p-8 text-center text-secondary">Loading profile...</div>;
   if (error || !emp) return <div className="p-8 text-center text-danger">Failed to load employee profile</div>;
-
-  const { currentUserEmail, currentUserId, isAdminOrManager } = useUserRole();
 
   // Check if logged-in user is viewing their own profile
   const isSelf = !!(

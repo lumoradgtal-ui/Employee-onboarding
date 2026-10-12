@@ -26,8 +26,11 @@ export function useUserRole() {
     enabled: !!orgId,
   });
 
-  const currentOrgMem = userOrgs.find((o: any) => o.organization_id === orgId);
-  const myEmp = employees.find((e: any) =>
+  const safeOrgs = Array.isArray(userOrgs) ? userOrgs : [];
+  const safeEmployees = Array.isArray(employees) ? employees : [];
+
+  const currentOrgMem = safeOrgs.find((o: any) => o.organization_id === orgId || o.id === orgId);
+  const myEmp = safeEmployees.find((e: any) =>
     (e.work_email && e.work_email.toLowerCase() === currentUserEmail) ||
     (e.personal_email && e.personal_email.toLowerCase() === currentUserEmail) ||
     (e.user_id && e.user_id === currentUserId)
@@ -57,7 +60,7 @@ export function useUserRole() {
     isAdminOrManager,
     myEmp,
     currentOrgMem,
-    employees,
+    employees: safeEmployees,
     userSession
   };
 }
