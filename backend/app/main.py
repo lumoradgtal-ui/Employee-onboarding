@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Any, Optional
 from datetime import date, datetime
-from .core import admin, settings, get_user, require_org, require_role
+from .core import admin, settings, get_user, require_org, require_role, require_super_admin, is_super_admin
 
 load_dotenv()
 
@@ -130,7 +130,155 @@ def organizations(user=Depends(get_user)):
                     memberships.append(new_mem[0])
                     existing_org_ids.add(o_id)
 
+    if is_super_admin(user):
+        all_orgs = admin.table("organizations").select("*").execute().data or []
+        for org in all_orgs:
+            if org["id"] not in existing_org_ids:
+                memberships.append({
+                    "organization_id": org["id"],
+                    "role": "owner",
+                    "status": "active",
+                    "organizations": org
+                })
+                existing_org_ids.add(org["id"])
+
     return memberships
+
+# ==========================================
+# SUPER ADMIN / SYSTEM OWNER PLATFORM APIS
+# ==========================================
+
+class SuperAdminOrgCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=160)
+    legal_name: Optional[str] = None
+    timezone: Optional[str] = "Asia/Kolkata"
+    currency: Optional[str] = "INR"
+    owner_email: Optional[str] = None
+    owner_name: Optional[str] = None
+
+class SuperAdminOrgStatus(BaseModel):
+    status: str
+
+@app.get("/api/super-admin/check")
+def super_admin_check(user=Depends(get_user)):
+    return {
+        "is_super_admin": is_super_admin(user),
+        "email": user.email,
+        "user_id": user.id
+    }
+
+@app.get("/api/super-admin/overview")
+def super_admin_overview(user=Depends(require_super_admin)):
+    all_orgs = admin.table("organizations").select("id, name, created_at, settings").execute().data or []
+    total_employees = 0
+    try:
+        total_employees = len(admin.table("employees").select("id").execute().data or [])
+    except Exception:
+        pass
+        
+    total_users = 0
+    try:
+        users_list = admin.auth.admin.list_users()
+        total_users = len(users_list) if users_list else 0
+    except Exception:
+        pass
+
+    total_pending_leaves = 0
+    try:
+        total_pending_leaves = len(admin.table("leave_requests").select("id").eq("status", "pending").execute().data or [])
+    except Exception:
+        pass
+
+    return {
+        "total_organizations": len(all_orgs),
+        "total_workforce": total_employees,
+        "total_users": total_users,
+        "total_pending_leaves": total_pending_leaves,
+        "status": "healthy"
+    }
+
+@app.get("/api/super-admin/organizations")
+def super_admin_organizations(user=Depends(require_super_admin)):
+    all_orgs = admin.table("organizations").select("*").order("created_at", desc=True).execute().data or []
+    
+    enriched = []
+    for org in all_orgs:
+        o_id = org["id"]
+        emps = admin.table("employees").select("id").eq("organization_id", o_id).execute().data or []
+        mems = admin.table("organization_members").select("user_id, role").eq("organization_id", o_id).execute().data or []
+        
+        owner_member = next((m for m in mems if m.get("role") in ["owner", "admin"]), mems[0] if mems else None)
+        owner_email = None
+        owner_name = None
+        if owner_member and owner_member.get("user_id"):
+            u_info = safe_single(admin.table("profiles").select("full_name, email").eq("id", owner_member["user_id"]))
+            if u_info:
+                owner_email = u_info.get("email")
+                owner_name = u_info.get("full_name")
+        
+        status = "active"
+        if isinstance(org.get("settings"), dict):
+            status = org["settings"].get("status", "active")
+            
+        enriched.append({
+            **org,
+            "employee_count": len(emps),
+            "member_count": len(mems),
+            "status": status,
+            "owner_email": owner_email,
+            "owner_name": owner_name
+        })
+        
+    return enriched
+
+@app.post("/api/super-admin/organizations")
+def super_admin_create_org(body: SuperAdminOrgCreate, user=Depends(require_super_admin)):
+    new_org = {
+        "name": body.name.strip(),
+        "legal_name": (body.legal_name or body.name).strip(),
+        "timezone": body.timezone or "Asia/Kolkata",
+        "currency": body.currency or "INR",
+        "settings": {"status": "active"}
+    }
+    created = admin.table("organizations").insert(new_org).execute().data
+    if not created:
+        raise HTTPException(500, "Failed to create organization")
+    org = created[0]
+    
+    admin.table("organization_members").insert({
+        "organization_id": org["id"],
+        "user_id": user.id,
+        "role": "owner",
+        "status": "active"
+    }).execute()
+    
+    if body.owner_email:
+        o_email = body.owner_email.lower().strip()
+        try:
+            users = admin.auth.admin.list_users()
+            target_user = next((u for u in users if u.email and u.email.lower() == o_email), None)
+            if target_user:
+                admin.table("organization_members").upsert({
+                    "organization_id": org["id"],
+                    "user_id": target_user.id,
+                    "role": "owner",
+                    "status": "active"
+                }).execute()
+        except Exception as e:
+            print("Super admin invite owner error:", e)
+
+    return org
+
+@app.patch("/api/super-admin/organizations/{org_id}/status")
+def super_admin_update_org_status(org_id: str, body: SuperAdminOrgStatus, user=Depends(require_super_admin)):
+    cur = safe_single(admin.table("organizations").select("settings").eq("id", org_id))
+    cur_settings = (cur.get("settings") if cur and isinstance(cur.get("settings"), dict) else {})
+    cur_settings["status"] = body.status
+    res = admin.table("organizations").update({"settings": cur_settings}).eq("id", org_id).execute().data
+    if not res:
+        raise HTTPException(404, "Organization not found")
+    return {"success": True, "status": body.status}
+
 
 @app.get("/api/dashboard/{org_id}")
 def dashboard(org_id: str, user=Depends(get_user)):

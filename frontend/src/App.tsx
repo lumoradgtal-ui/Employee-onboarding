@@ -25,6 +25,7 @@ import Offboarding from './pages/Offboarding';
 import Documents from './pages/Documents';
 import Reports from './pages/Reports';
 import Audit from './pages/Audit';
+import SystemAdmin from './pages/SystemAdmin';
 
 import ResetPassword from './pages/ResetPassword';
 
@@ -86,6 +87,7 @@ export default function App() {
           <Route path="/resignation" element={<Offboarding />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/audit" element={<Audit />} />
+          <Route path="/system-admin" element={<SystemAdmin />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Shell>

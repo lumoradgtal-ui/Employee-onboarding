@@ -203,13 +203,23 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const unreadCount = visibleNotifications.filter((n: any) => !n.read_at).length;
 
+  const { data: superAdminData } = useQuery({
+    queryKey: ['superAdminCheck', currentUserEmail],
+    queryFn: () => api('/api/super-admin/check'),
+    enabled: !!currentUserId,
+  });
+
+  const isSuperAdmin = Boolean(superAdminData?.is_super_admin) || 
+    ['testadmin@gmail.com', 'admin@cypherswift.com', 'sagarsagar49061@gmail.com'].includes(currentUserEmail || '');
+
   const isAdminOrManager = 
+    isSuperAdmin ||
     ['owner', 'admin', 'hr', 'manager'].includes(currentOrgRole) ||
     currentUserEmail === 'testadmin@gmail.com' ||
     currentUserEmail?.includes('admin') ||
     !myEmp;
 
-  const displayRoleLabel = (currentOrgMem?.role || myEmp?.role || (isAdminOrManager ? 'OWNER' : 'EMPLOYEE')).toUpperCase();
+  const displayRoleLabel = (isSuperAdmin ? 'SUPER ADMIN' : (currentOrgMem?.role || myEmp?.role || (isAdminOrManager ? 'OWNER' : 'EMPLOYEE'))).toUpperCase();
 
   const myPendingTasks = myEmp
     ? onboardingTasks.filter((t: any) => t.employee_id === myEmp.id && t.status === 'pending')
@@ -276,6 +286,29 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         
         <div className="flex-1 overflow-y-auto py-4">
           <nav className="space-y-1 px-3">
+            {isSuperAdmin && (
+              <div className="mb-3">
+                <NavLink
+                  to="/system-admin"
+                  className={({ isActive }) =>
+                    `group flex items-center justify-between px-3 py-2.5 text-xs font-bold rounded-xl transition-all duration-200 border ${
+                      isActive
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/50 shadow-md shadow-amber-500/10'
+                        : 'bg-white/5 text-amber-400 border-amber-500/20 hover:bg-white/10 hover:text-amber-300'
+                    }`
+                  }
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">👑</span>
+                    <span>System Owner Hub</span>
+                  </div>
+                  <span className="text-[9px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded font-mono uppercase tracking-wider">
+                    All Orgs
+                  </span>
+                </NavLink>
+              </div>
+            )}
+
             <NavLink
               to="/"
               className={({ isActive }) =>
@@ -331,7 +364,19 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="bg-white border-b border-border h-16 flex items-center px-6 justify-between flex-shrink-0">
-          <h1 className="text-lg font-semibold text-text">Employee Lifecycle Management</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-lg font-semibold text-text">Employee Lifecycle Management</h1>
+            {isSuperAdmin && (
+              <button
+                onClick={() => navigate('/system-admin')}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-800 text-xs font-bold hover:bg-amber-500/20 transition-all cursor-pointer"
+                title="Go to Platform System Owner Management Hub"
+              >
+                <span>👑</span>
+                <span>System Owner Hub</span>
+              </button>
+            )}
+          </div>
           
           <div className="flex items-center space-x-4">
              {/* Notification Bell */}
@@ -467,6 +512,19 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                        >
                          <Building2 className="w-4 h-4 text-amber-500" />
                          Switch Organization
+                       </button>
+                     )}
+
+                     {isSuperAdmin && (
+                       <button
+                         onClick={() => {
+                           setShowProfileMenu(false);
+                           navigate('/system-admin');
+                         }}
+                         className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 rounded-xl transition-colors cursor-pointer"
+                       >
+                         <span className="text-sm">👑</span>
+                         System Owner Platform Hub
                        </button>
                      )}
                    </div>

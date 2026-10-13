@@ -41,7 +41,18 @@ export function useUserRole() {
 
   const role = orgRole || empRole || (!myEmp ? 'owner' : 'employee');
 
+  const { data: superAdminCheck } = useQuery({
+    queryKey: ['superAdminCheck', currentUserEmail],
+    queryFn: () => api('/api/super-admin/check'),
+    enabled: !!currentUserId,
+  });
+
+  const isSuperAdmin =
+    Boolean(superAdminCheck?.is_super_admin) ||
+    ['testadmin@gmail.com', 'admin@cypherswift.com', 'sagarsagar49061@gmail.com'].includes(currentUserEmail || '');
+
   const isAdminOrManager =
+    isSuperAdmin ||
     ['owner', 'admin', 'hr', 'manager'].includes(role) ||
     ['owner', 'admin', 'hr', 'manager'].includes(orgRole) ||
     ['owner', 'admin', 'hr', 'manager'].includes(empRole) ||
@@ -57,6 +68,7 @@ export function useUserRole() {
     orgRole,
     empRole,
     role,
+    isSuperAdmin,
     isAdminOrManager,
     myEmp,
     currentOrgMem,

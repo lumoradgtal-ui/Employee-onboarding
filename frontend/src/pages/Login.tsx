@@ -227,6 +227,97 @@ export default function Login() {
           )}
         </div>
 
+        {/* Quick Demo Credentials / Login Credits */}
+        <div className="pt-2">
+          <div className="bg-gradient-to-br from-gray-50 to-gray-100/70 border border-gray-200/80 rounded-xl p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-[#A00142]" />
+                Demo Credentials & Roles
+              </span>
+              <span className="text-[10px] text-gray-500 font-medium">1-Click Fill</span>
+            </div>
+            
+            <div className="grid grid-cols-1 gap-1.5">
+              {/* System Owner / Super Admin */}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('login');
+                  setPortalType('organization');
+                  setEmail('testadmin@gmail.com');
+                  setPassword('Admin@123456');
+                  setError('');
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 bg-white hover:bg-[#FCE8EE]/50 border border-gray-200 hover:border-[#A00142]/40 rounded-lg text-left text-xs transition-colors group cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-md bg-amber-500/10 text-amber-700 flex items-center justify-center font-bold text-[10px]">
+                    👑
+                  </span>
+                  <div>
+                    <div className="font-bold text-gray-900 group-hover:text-[#A00142]">System Owner (Super Admin)</div>
+                    <div className="text-[10px] text-gray-500 font-mono">testadmin@gmail.com</div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-semibold text-gray-400 group-hover:text-[#A00142]">Fill</span>
+              </button>
+
+              {/* Company Admin */}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('login');
+                  setPortalType('organization');
+                  setEmail('admin@cypherswift.com');
+                  setPassword('Admin@123456');
+                  setError('');
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 bg-white hover:bg-purple-50/50 border border-gray-200 hover:border-purple-300 rounded-lg text-left text-xs transition-colors group cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-md bg-purple-500/10 text-purple-700 flex items-center justify-center font-bold text-[10px]">
+                    🏢
+                  </span>
+                  <div>
+                    <div className="font-bold text-gray-900 group-hover:text-purple-700">Company Admin (CypherSwift)</div>
+                    <div className="text-[10px] text-gray-500 font-mono">admin@cypherswift.com</div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-semibold text-gray-400 group-hover:text-purple-700">Fill</span>
+              </button>
+
+              {/* Employee */}
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('login');
+                  setPortalType('employee');
+                  setEmail('employee@gmail.com');
+                  setPassword('Admin@123456');
+                  setError('');
+                }}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 bg-white hover:bg-blue-50/50 border border-gray-200 hover:border-blue-300 rounded-lg text-left text-xs transition-colors group cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="w-5 h-5 rounded-md bg-blue-500/10 text-blue-700 flex items-center justify-center font-bold text-[10px]">
+                    👤
+                  </span>
+                  <div>
+                    <div className="font-bold text-gray-900 group-hover:text-blue-700">Employee Self-Service</div>
+                    <div className="text-[10px] text-gray-500 font-mono">employee@gmail.com</div>
+                  </div>
+                </div>
+                <span className="text-[10px] font-semibold text-gray-400 group-hover:text-blue-700">Fill</span>
+              </button>
+            </div>
+            
+            <div className="text-[10px] text-gray-500 text-center">
+              Default Password: <span className="font-mono font-bold text-gray-700">Admin@123456</span>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   );
