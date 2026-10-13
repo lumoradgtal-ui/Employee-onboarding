@@ -133,8 +133,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     enabled: !!orgId,
   });
 
-  const unreadCount = notifications.filter((n: any) => !n.read_at).length;
-
   const markReadMutation = useMutation({
     mutationFn: (id: string) =>
       api(`/api/notifications/${id}`, {
@@ -190,6 +188,20 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   );
 
   const currentOrgRole = (currentOrgMem?.role || myEmp?.role || 'owner').toLowerCase();
+  const isOwner = currentOrgRole === 'owner';
+
+  // Privacy scoping: Owner sees all notifications; regular employees strictly see notifications meant for them
+  const visibleNotifications = notifications.filter((n: any) => {
+    if (isOwner) return true;
+    if (n.user_id && currentUserId && n.user_id !== currentUserId) return false;
+    if (n.type === 'account_provisioned') {
+      if (currentUserEmail && n.message?.toLowerCase().includes(currentUserEmail)) return true;
+      return false;
+    }
+    return true;
+  });
+
+  const unreadCount = visibleNotifications.filter((n: any) => !n.read_at).length;
 
   const isAdminOrManager = 
     ['owner', 'admin', 'hr', 'manager'].includes(currentOrgRole) ||
@@ -348,12 +360,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                    </div>
 
                    <div className="max-h-80 overflow-y-auto divide-y divide-border">
-                     {notifications.length === 0 ? (
+                     {visibleNotifications.length === 0 ? (
                        <div className="p-6 text-center text-xs text-secondary">
                          No notifications at this time.
                        </div>
                      ) : (
-                       notifications.map((n: any) => (
+                       visibleNotifications.map((n: any) => (
                          <div
                            key={n.id}
                            className={`p-3 text-xs space-y-1 transition-colors ${

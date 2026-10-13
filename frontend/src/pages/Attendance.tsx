@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { 
   MapPin, Clock, CheckCircle2, AlertCircle, Play, Square, Lock, 
-  ShieldCheck, UserCheck, LocateFixed, RefreshCw, LogOut, Navigation, Sparkles, Home, Coffee, Pause
+  ShieldCheck, UserCheck, LocateFixed, RefreshCw, LogOut, Navigation, Sparkles, Home, Coffee, Pause, Settings
 } from 'lucide-react';
 
 export default function Attendance() {
@@ -23,6 +23,15 @@ export default function Attendance() {
   const [adminOverride, setAdminOverride] = useState(false);
   const [myEmpId, setMyEmpId] = useState<string | null>(null);
   const [isOrgAdmin, setIsOrgAdmin] = useState(false);
+
+  // Shift Management & Configuration State
+  const [showShiftModal, setShowShiftModal] = useState(false);
+  const [shiftName, setShiftName] = useState('General Day Shift');
+  const [shiftStartTime, setShiftStartTime] = useState('09:30');
+  const [shiftEndTime, setShiftEndTime] = useState('18:30');
+  const [gracePeriodMins, setGracePeriodMins] = useState(15);
+  const [fullDayHours, setFullDayHours] = useState(8.0);
+  const [halfDayHours, setHalfDayHours] = useState(4.5);
 
   // First-time Remote Location Registration State
   const [showRemoteRegister, setShowRemoteRegister] = useState(false);
@@ -97,16 +106,57 @@ export default function Attendance() {
     enabled: !!orgId,
   });
 
+  const { data: userOrgs = [] } = useQuery({
+    queryKey: ['userOrganizations'],
+    queryFn: () => api('/api/organizations'),
+  });
+
+  const currentOrg = userOrgs.find((o: any) => o.organization_id === orgId);
+  const orgSettings = currentOrg?.organizations?.settings || {};
+  const currentShift = orgSettings.shift || {
+    name: 'General Day Shift',
+    start_time: '09:30',
+    end_time: '18:30',
+    grace_period_mins: 15,
+    half_day_hours: 4.5,
+    full_day_hours: 8.0,
+  };
+
   useEffect(() => {
-    if (orgId) {
-      api('/api/organizations').then((orgs: any[]) => {
-        const currentOrg = orgs.find((o: any) => o.organization_id === orgId);
-        if (currentOrg && ['owner', 'admin', 'hr', 'manager'].includes(currentOrg.role)) {
-          setIsOrgAdmin(true);
-        }
-      }).catch(() => {});
+    if (currentOrg && ['owner', 'admin', 'hr', 'manager'].includes(currentOrg.role)) {
+      setIsOrgAdmin(true);
     }
-  }, [orgId]);
+  }, [currentOrg]);
+
+  useEffect(() => {
+    if (orgSettings?.shift) {
+      setShiftName(orgSettings.shift.name || 'General Day Shift');
+      setShiftStartTime(orgSettings.shift.start_time || '09:30');
+      setShiftEndTime(orgSettings.shift.end_time || '18:30');
+      setGracePeriodMins(orgSettings.shift.grace_period_mins ?? 15);
+      setFullDayHours(orgSettings.shift.full_day_hours ?? 8.0);
+      setHalfDayHours(orgSettings.shift.half_day_hours ?? 4.5);
+    }
+  }, [orgSettings?.shift]);
+
+  const updateShiftMutation = useMutation({
+    mutationFn: (newShift: any) =>
+      api(`/api/organization/${orgId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          settings: {
+            shift: newShift,
+          },
+        }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['userOrganizations'] });
+      setShowShiftModal(false);
+    },
+    onError: (err: any) => {
+      alert(err.message || 'Failed to update shift timings.');
+    },
+  });
 
   useEffect(() => {
     if (currentUserEmail && employees.length > 0) {
@@ -306,14 +356,192 @@ export default function Attendance() {
           <p className="text-xs text-gray-500 font-medium mt-0.5">Live GPS location clock-in & geofenced workstation registration for remote workforce.</p>
         </div>
 
-        <button
-          onClick={() => setShowRemoteRegister(true)}
-          className="px-3.5 py-2 bg-[#FCE8EE] text-[#A00142] hover:bg-[#A00142] hover:text-white border border-[#A00142]/30 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-xs cursor-pointer self-start sm:self-auto"
-        >
-          <Home className="w-4 h-4" />
-          {myRemoteLocation ? 'Update Remote Workstation' : 'Set Up Remote Location'}
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {isOrgAdmin && (
+            <button
+              onClick={() => setShowShiftModal(true)}
+              className="px-3.5 py-2 bg-purple-50 text-purple-700 hover:bg-purple-700 hover:text-white border border-purple-200 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="Configure Organization Shift Timings"
+            >
+              <Settings className="w-4 h-4" />
+              Configure Shift Timings
+            </button>
+          )}
+
+          <button
+            onClick={() => setShowRemoteRegister(true)}
+            className="px-3.5 py-2 bg-[#FCE8EE] text-[#A00142] hover:bg-[#A00142] hover:text-white border border-[#A00142]/30 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-xs cursor-pointer"
+          >
+            <Home className="w-4 h-4" />
+            {myRemoteLocation ? 'Update Remote Workstation' : 'Set Up Remote Location'}
+          </button>
+        </div>
       </div>
+
+      {/* Organization Shift & Working Hours Banner */}
+      <div className="bg-gradient-to-r from-purple-50/70 via-white to-pink-50/70 border border-purple-200/60 rounded-xl p-3 flex flex-wrap items-center justify-between gap-3 text-xs shadow-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="p-1.5 bg-purple-600 text-white rounded-lg shadow-xs">
+            <Clock className="w-4 h-4" />
+          </div>
+          <div>
+            <span className="font-extrabold text-gray-900 mr-2">{currentShift.name || 'General Day Shift'}:</span>
+            <span className="font-bold text-purple-900 bg-purple-100/90 px-2 py-0.5 rounded-md font-mono">
+              {currentShift.start_time || '09:30'} — {currentShift.end_time || '18:30'}
+            </span>
+            <span className="text-gray-500 ml-2">
+              (Late grace period: {currentShift.grace_period_mins ?? 15} mins • Full day: {currentShift.full_day_hours ?? 8}h • Half day cutoff: {currentShift.half_day_hours ?? 4.5}h)
+            </span>
+          </div>
+        </div>
+        {isOrgAdmin && (
+          <button
+            onClick={() => setShowShiftModal(true)}
+            className="text-[11px] font-bold text-purple-700 hover:text-purple-900 hover:underline flex items-center gap-1 cursor-pointer"
+          >
+            Edit Shift Schedule &rarr;
+          </button>
+        )}
+      </div>
+
+      {/* Shift Schedule Configuration Modal for Owner / Admin */}
+      {showShiftModal && (
+        <div className="card bg-white border-2 border-purple-300 shadow-xl p-6 space-y-4 rounded-2xl animate-in fade-in duration-200">
+          <div className="flex justify-between items-start border-b border-gray-100 pb-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-purple-600 text-white rounded-xl shadow-md">
+                <Settings className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-[#080809]">Organization Shift Schedule & Work Hours</h3>
+                <p className="text-xs text-gray-500 font-medium">
+                  Configure official shift start & end hours, arrival grace period, and minimum hours for employees.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowShiftModal(false)}
+              className="text-gray-400 hover:text-gray-600 font-bold text-xl cursor-pointer"
+            >
+              &times;
+            </button>
+          </div>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              updateShiftMutation.mutate({
+                name: shiftName,
+                start_time: shiftStartTime,
+                end_time: shiftEndTime,
+                grace_period_mins: Number(gracePeriodMins),
+                half_day_hours: Number(halfDayHours),
+                full_day_hours: Number(fullDayHours),
+              });
+            }}
+            className="space-y-4"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Shift Name</label>
+                <input
+                  type="text"
+                  required
+                  className="input text-xs"
+                  placeholder="e.g. General Day Shift"
+                  value={shiftName}
+                  onChange={(e) => setShiftName(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Shift Start Time</label>
+                <input
+                  type="time"
+                  required
+                  className="input text-xs font-mono"
+                  value={shiftStartTime}
+                  onChange={(e) => setShiftStartTime(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Shift End Time</label>
+                <input
+                  type="time"
+                  required
+                  className="input text-xs font-mono"
+                  value={shiftEndTime}
+                  onChange={(e) => setShiftEndTime(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Late Grace Period (Mins)</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="120"
+                  required
+                  className="input text-xs font-mono"
+                  value={gracePeriodMins}
+                  onChange={(e) => setGracePeriodMins(Number(e.target.value))}
+                />
+                <span className="text-[10px] text-gray-400">Tolerance before clock-in is marked late.</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Full Day Working Hours</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="1"
+                  max="16"
+                  required
+                  className="input text-xs font-mono"
+                  value={fullDayHours}
+                  onChange={(e) => setFullDayHours(Number(e.target.value))}
+                />
+                <span className="text-[10px] text-gray-400">Hours required for a full attendance credit.</span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">Half Day Minimum Hours</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="1"
+                  max="12"
+                  required
+                  className="input text-xs font-mono"
+                  value={halfDayHours}
+                  onChange={(e) => setHalfDayHours(Number(e.target.value))}
+                />
+                <span className="text-[10px] text-gray-400">Minimum hours to avoid unexcused absence.</span>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setShowShiftModal(false)}
+                className="btn-secondary text-xs px-4 py-2 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={updateShiftMutation.isPending}
+                className="btn text-xs px-5 py-2 font-bold cursor-pointer bg-purple-700 hover:bg-purple-800 text-white"
+              >
+                {updateShiftMutation.isPending ? 'Saving Shift...' : 'Save Shift Schedule'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* First-Time Remote Work Location Registration Card Modal */}
       {showRemoteRegister && (

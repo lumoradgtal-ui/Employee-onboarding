@@ -76,12 +76,26 @@ def bootstrap(body: OrgCreate, user=Depends(get_user)):
     admin.table("organization_members").insert({"organization_id":org["id"],"user_id":user.id,"role":"owner","status":"active"}).execute()
     admin.table("profiles").upsert({"id":user.id,"full_name":user.user_metadata.get("full_name") or user.email,"email":user.email}).execute()
 class OrgUpdate(BaseModel):
-    name: str = Field(min_length=2, max_length=160)
+    name: Optional[str] = None
+    settings: Optional[dict[str, Any]] = None
+    timezone: Optional[str] = None
 
 @app.patch("/api/organization/{org_id}")
 def update_organization(org_id: str, body: OrgUpdate, user=Depends(get_user)):
     require_role(user.id, org_id, ["owner", "admin", "hr", "manager"])
-    res = admin.table("organizations").update({"name": body.name.strip()}).eq("id", org_id).execute().data
+    upd = {}
+    if body.name is not None and body.name.strip():
+        upd["name"] = body.name.strip()
+    if body.timezone is not None and body.timezone.strip():
+        upd["timezone"] = body.timezone.strip()
+    if body.settings is not None:
+        cur = safe_single(admin.table("organizations").select("settings").eq("id", org_id))
+        cur_settings = (cur.get("settings") if cur and isinstance(cur.get("settings"), dict) else {})
+        cur_settings.update(body.settings)
+        upd["settings"] = cur_settings
+    if not upd:
+        return {"success": True}
+    res = admin.table("organizations").update(upd).eq("id", org_id).execute().data
     if not res:
         raise HTTPException(404, "Organization not found")
     return res[0]
@@ -961,6 +975,13 @@ def generic_list(table:str, org_id:str, user=Depends(get_user), employee_id:str=
     q=admin.table(table).select("*").eq("organization_id",org_id).order("created_at",desc=True)
     if employee_id: q=q.eq("employee_id",employee_id)
     if status: q=q.eq("status",status)
+    if table == "notifications":
+        mem = safe_single(admin.table("organization_members").select("role").eq("organization_id", org_id).eq("user_id", user.id))
+        user_role = (mem.get("role") if mem else "employee").lower()
+        if user_role != "owner":
+            # Only the owner can see all notifications and employee login credentials.
+            # Individual employees and non-owner users only receive notifications targeted to their own user_id.
+            q = q.eq("user_id", user.id)
     data = q.range(offset,offset+limit-1).execute().data
     if table == "attendance_records" and data:
         return [format_attendance_record(r) for r in data]
