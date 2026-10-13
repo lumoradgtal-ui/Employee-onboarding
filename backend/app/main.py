@@ -182,6 +182,225 @@ def create_employee(body: EmployeeCreate, user=Depends(get_user)):
     admin.table("employee_status_history").insert({"organization_id": body.organization_id, "employee_id": emp["id"], "from_status": None, "to_status": emp["status"], "changed_by": user.id, "reason": "Employee created"}).execute()
     return emp
 
+class BulkImportPayload(BaseModel):
+    organization_id: str
+    auto_provision_accounts: bool = False
+    employees: list[dict[str, Any]]
+
+@app.post("/api/employees/bulk-import")
+def bulk_import_employees(body: BulkImportPayload, user=Depends(get_user)):
+    require_role(user.id, body.organization_id, ["owner", "admin", "hr"])
+    org_id = body.organization_id
+    raw_list = body.employees
+    if not raw_list:
+        raise HTTPException(400, "No employee records provided for import")
+        
+    # 1. Fetch departments and designations to map names to IDs or auto-create missing ones
+    dept_rows = admin.table("departments").select("id, name").eq("organization_id", org_id).execute().data or []
+    dept_map = {d["name"].strip().lower(): d["id"] for d in dept_rows if d.get("name")}
+    
+    desig_rows = admin.table("designations").select("id, name").eq("organization_id", org_id).execute().data or []
+    desig_map = {d["name"].strip().lower(): d["id"] for d in desig_rows if d.get("name")}
+    
+    # Auto-create newly referenced departments and designations in bulk
+    new_depts = set()
+    new_desigs = set()
+    for row in raw_list:
+        d_name = (row.get("department_name") or row.get("department") or "").strip()
+        if d_name and d_name.lower() not in dept_map:
+            new_depts.add(d_name)
+        dg_name = (row.get("designation_name") or row.get("designation") or "").strip()
+        if dg_name and dg_name.lower() not in desig_map:
+            new_desigs.add(dg_name)
+            
+    for d_name in new_depts:
+        try:
+            created_d = admin.table("departments").insert({"organization_id": org_id, "name": d_name}).execute().data
+            if created_d:
+                dept_map[d_name.lower()] = created_d[0]["id"]
+        except Exception:
+            pass
+            
+    for dg_name in new_desigs:
+        try:
+            created_dg = admin.table("designations").insert({"organization_id": org_id, "name": dg_name}).execute().data
+            if created_dg:
+                desig_map[dg_name.lower()] = created_dg[0]["id"]
+        except Exception:
+            pass
+
+    # 2. Get existing employee codes and emails to avoid collision
+    existing_emps = admin.table("employees").select("employee_code, work_email, personal_email").eq("organization_id", org_id).execute().data or []
+    existing_codes = set()
+    max_num = 0
+    for e in existing_emps:
+        code = str(e.get("employee_code") or "").strip()
+        if code:
+            existing_codes.add(code.lower())
+            nums = "".join(filter(str.isdigit, code))
+            if nums:
+                try:
+                    val = int(nums)
+                    if val > max_num: max_num = val
+                except ValueError:
+                    pass
+
+    existing_emails = set()
+    for e in existing_emps:
+        we = (e.get("work_email") or "").strip().lower()
+        if we: existing_emails.add(we)
+        pe = (e.get("personal_email") or "").strip().lower()
+        if pe: existing_emails.add(pe)
+
+    # 3. Process & sanitize employee rows
+    valid_emps = []
+    skipped = []
+    next_num = max_num + 1
+
+    for idx, row in enumerate(raw_list):
+        first_name = (row.get("first_name") or row.get("firstname") or "").strip()
+        if not first_name:
+            skipped.append({"index": idx, "row": row, "reason": "Missing first name"})
+            continue
+            
+        last_name = (row.get("last_name") or row.get("lastname") or "").strip() or None
+        work_email = (row.get("work_email") or row.get("email") or "").strip().lower() or None
+        personal_email = (row.get("personal_email") or "").strip().lower() or None
+        phone = (row.get("phone") or row.get("mobile") or "").strip() or None
+        
+        # Check duplicate work_email
+        if work_email and work_email in existing_emails:
+            skipped.append({"index": idx, "row": row, "reason": f"Email '{work_email}' already exists in organization"})
+            continue
+        if work_email:
+            existing_emails.add(work_email)
+            
+        # Determine employee code
+        emp_code = (row.get("employee_code") or row.get("code") or "").strip()
+        if not emp_code or emp_code.lower() in existing_codes:
+            emp_code = f"{next_num:03d}"
+            next_num += 1
+        existing_codes.add(emp_code.lower())
+        
+        # Department & Designation IDs
+        d_name = (row.get("department_name") or row.get("department") or "").strip()
+        dept_id = dept_map.get(d_name.lower()) if d_name else None
+        
+        dg_name = (row.get("designation_name") or row.get("designation") or "").strip()
+        desig_id = desig_map.get(dg_name.lower()) if dg_name else None
+        
+        # Employment type & status
+        emp_type = (row.get("employment_type") or "full_time").strip().lower()
+        if emp_type not in ["full_time", "part_time", "contract", "intern"]:
+            emp_type = "full_time"
+            
+        emp_status = (row.get("status") or "active").strip().lower()
+        if emp_status not in ["active", "pre_onboarding", "onboarding", "probation", "notice_period", "offboarded"]:
+            emp_status = "active"
+            
+        doj = row.get("date_of_joining") or row.get("doj") or None
+        if doj and isinstance(doj, str):
+            doj = doj.strip()[:10]
+            
+        loc = (row.get("location") or "").strip() or None
+        
+        valid_emps.append({
+            "organization_id": org_id,
+            "employee_code": emp_code,
+            "first_name": first_name,
+            "last_name": last_name,
+            "work_email": work_email,
+            "personal_email": personal_email,
+            "phone": phone,
+            "department_id": dept_id,
+            "designation_id": desig_id,
+            "employment_type": emp_type,
+            "status": emp_status,
+            "date_of_joining": doj,
+            "location": loc
+        })
+
+    # 4. Insert valid employees in batches of 100
+    inserted_records = []
+    chunk_size = 100
+    for i in range(0, len(valid_emps), chunk_size):
+        chunk = valid_emps[i:i + chunk_size]
+        try:
+            res = admin.table("employees").insert(chunk).execute()
+            if res and res.data:
+                inserted_records.extend(res.data)
+                hist_chunk = [{
+                    "organization_id": org_id,
+                    "employee_id": e["id"],
+                    "from_status": None,
+                    "to_status": e.get("status") or "active",
+                    "changed_by": user.id,
+                    "reason": "Bulk imported"
+                } for e in res.data]
+                admin.table("employee_status_history").insert(hist_chunk).execute()
+        except Exception as batch_err:
+            print(f"[BULK INSERT BATCH ERROR] {batch_err}")
+            for item in chunk:
+                try:
+                    single_res = admin.table("employees").insert(item).execute()
+                    if single_res and single_res.data:
+                        emp_single = single_res.data[0]
+                        inserted_records.append(emp_single)
+                        admin.table("employee_status_history").insert({
+                            "organization_id": org_id,
+                            "employee_id": emp_single["id"],
+                            "from_status": None,
+                            "to_status": emp_single.get("status") or "active",
+                            "changed_by": user.id,
+                            "reason": "Bulk imported"
+                        }).execute()
+                except Exception as row_err:
+                    skipped.append({"row": item, "reason": str(row_err)})
+
+    # 5. Optional auto-provision accounts
+    provisioned_count = 0
+    if body.auto_provision_accounts and inserted_records:
+        for emp_row in inserted_records:
+            target_email = emp_row.get("work_email") or emp_row.get("personal_email")
+            if target_email:
+                try:
+                    temp_pw = f"Hrms@{emp_row['first_name'].capitalize()}{datetime.utcnow().year}"
+                    existing_users = admin.auth.admin.list_users()
+                    u_match = next((u for u in existing_users if u.email and u.email.lower() == target_email.lower()), None)
+                    if u_match:
+                        auth_u = u_match
+                        admin.auth.admin.update_user_by_id(auth_u.id, {"password": temp_pw, "email_confirm": True})
+                    else:
+                        auth_u = admin.auth.admin.create_user({
+                            "email": target_email,
+                            "password": temp_pw,
+                            "email_confirm": True,
+                            "user_metadata": {
+                                "full_name": f"{emp_row.get('first_name') or ''} {emp_row.get('last_name') or ''}".strip(),
+                                "first_name": emp_row.get("first_name"),
+                                "last_name": emp_row.get("last_name")
+                            }
+                        })
+                    admin.table("employees").update({"user_id": auth_u.id}).eq("id", emp_row["id"]).execute()
+                    admin.table("organization_members").insert({
+                        "organization_id": org_id,
+                        "user_id": auth_u.id,
+                        "role": "employee",
+                        "status": "active"
+                    }).execute()
+                    provisioned_count += 1
+                except Exception:
+                    pass
+
+    return {
+        "success": True,
+        "total_submitted": len(raw_list),
+        "imported_count": len(inserted_records),
+        "skipped_count": len(skipped),
+        "provisioned_count": provisioned_count,
+        "skipped": skipped
+    }
+
 @app.get("/api/employees/{employee_id}")
 def employee(employee_id: str, org_id: str, user=Depends(get_user)):
     require_org(user.id,org_id)

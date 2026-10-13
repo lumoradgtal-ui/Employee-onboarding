@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../../store';
 import { api } from '../../lib/api';
-import { ArrowLeft, Save, Plus, Sparkles, Mail, CheckCircle2, Copy, Check } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Sparkles, Mail, CheckCircle2, Copy, Check, FileSpreadsheet } from 'lucide-react';
+import BulkEmployeeImportModal from './BulkEmployeeImportModal';
 
 export default function EmployeeNew() {
   const { orgId } = useAppStore();
@@ -12,6 +13,7 @@ export default function EmployeeNew() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
 
   // Quick creation modal states
   const [showDeptModal, setShowDeptModal] = useState(false);
@@ -163,6 +165,34 @@ export default function EmployeeNew() {
             {seedDefaultsMutation.isPending ? 'Seeding...' : 'Seed Standard Depts & Designations'}
           </button>
         )}
+      </div>
+
+      {/* Bulk Import Callout Banner for 1000s of employees */}
+      <div className="bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-indigo-500/10 border border-emerald-500/20 rounded-2xl p-5 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-sm">
+            <FileSpreadsheet className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-text text-base flex items-center gap-2">
+              Have 100s or 1,000s of employees to add at once?
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300">
+                Excel & CSV Bulk Import
+              </span>
+            </h3>
+            <p className="text-xs text-secondary mt-1">
+              Upload your spreadsheet (.xlsx, .xls, .csv). You get a full confirmation preview table to review all records before anything is created, guaranteeing zero errors!
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowBulkImportModal(true)}
+          className="shrink-0 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-sm transition-all duration-150 cursor-pointer hover:shadow"
+        >
+          <FileSpreadsheet className="w-4 h-4" />
+          Open Bulk Import Wizard
+        </button>
       </div>
 
       <div className="card">
@@ -457,6 +487,17 @@ export default function EmployeeNew() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Bulk Employee Import Modal */}
+      {showBulkImportModal && (
+        <BulkEmployeeImportModal
+          onClose={() => setShowBulkImportModal(false)}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['employees', orgId] });
+            navigate('/employees');
+          }}
+        />
       )}
     </div>
   );

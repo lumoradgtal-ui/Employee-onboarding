@@ -5,13 +5,15 @@ import { useAppStore } from '../../store';
 import { api } from '../../lib/api';
 import { supabase } from '../../lib/supabase';
 import { useUserRole } from '../../lib/useUserRole';
-import { Search, Plus, Filter, Lock } from 'lucide-react';
+import { Search, Plus, Filter, Lock, FileSpreadsheet } from 'lucide-react';
+import BulkEmployeeImportModal from './BulkEmployeeImportModal';
 
 export default function EmployeeList() {
   const { orgId } = useAppStore();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
+  const [showBulkImportModal, setShowBulkImportModal] = useState(false);
 
   const { currentUserEmail, currentUserId, isAdminOrManager } = useUserRole();
 
@@ -42,14 +44,32 @@ export default function EmployeeList() {
           <h2 className="text-2xl font-bold text-text">Employees</h2>
           <p className="text-sm text-secondary">Manage your organization's workforce and employee lifecycle.</p>
         </div>
-        <button 
-          onClick={() => navigate('/employees/new')}
-          className="btn flex items-center justify-center gap-2"
-        >
-          <Plus className="w-4 h-4" />
-          Add Employee
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {isAdminOrManager && (
+            <button
+              onClick={() => setShowBulkImportModal(true)}
+              className="px-3.5 py-2 bg-[#FCE8EE] text-[#A00142] hover:bg-[#A00142] hover:text-white border border-[#A00142]/30 rounded-xl text-xs font-bold transition-all duration-200 flex items-center gap-1.5 shadow-xs cursor-pointer"
+              title="Bulk upload employees via Excel or CSV"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Bulk Import (Excel / CSV)
+            </button>
+          )}
+          <button 
+            onClick={() => navigate('/employees/new')}
+            className="btn flex items-center justify-center gap-2 text-xs"
+          >
+            <Plus className="w-4 h-4" />
+            Add Employee
+          </button>
+        </div>
       </div>
+
+      <BulkEmployeeImportModal
+        orgId={orgId}
+        isOpen={showBulkImportModal}
+        onClose={() => setShowBulkImportModal(false)}
+      />
 
       <div className="card">
         <div className="flex flex-col sm:flex-row gap-4 mb-6">
