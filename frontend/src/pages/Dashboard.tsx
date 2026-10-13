@@ -4,14 +4,14 @@ import { useAppStore } from '../store';
 import { api } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Users, UserCheck, Briefcase, FileText, Banknote, CalendarDays, Activity, ChevronRight, UserPlus, Clock
+  Users, UserCheck, Briefcase, FileText, Banknote, CalendarDays, Activity, ChevronRight, UserPlus, Clock, RefreshCw
 } from 'lucide-react';
 
 export default function Dashboard() {
   const { orgId } = useAppStore();
   const navigate = useNavigate();
 
-  const { data, error, isLoading } = useQuery({
+  const { data, error, isLoading, refetch } = useQuery({
     queryKey: ['dashboard', orgId],
     queryFn: () => api(`/api/dashboard/${orgId}`),
     enabled: !!orgId,
@@ -39,8 +39,26 @@ export default function Dashboard() {
     { name: 'Pending Expenses', value: data?.expenses_pending || 0, icon: Banknote, color: 'text-red-500', bg: 'bg-red-100', path: '/expenses' },
   ];
 
-  if (isLoading) return <div className="text-secondary py-8">Loading dashboard...</div>;
-  if (error) return <div className="text-danger py-8">Failed to load dashboard</div>;
+  if (isLoading) return <div className="text-secondary py-8 flex items-center gap-2"><RefreshCw className="w-4 h-4 animate-spin text-primary" /> Loading dashboard...</div>;
+  if (error) {
+    return (
+      <div className="card p-6 bg-red-50/50 border border-red-200 rounded-2xl space-y-3">
+        <div className="flex items-center gap-2 text-red-700 font-bold text-sm">
+          <span>⚠️ Failed to load dashboard statistics</span>
+        </div>
+        <p className="text-xs text-red-600">
+          {(error as any)?.message || 'Unable to connect to the organization workspace.'}
+        </p>
+        <button
+          onClick={() => refetch()}
+          className="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Retry Connection
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -82,7 +82,7 @@ class OrgUpdate(BaseModel):
 
 @app.patch("/api/organization/{org_id}")
 def update_organization(org_id: str, body: OrgUpdate, user=Depends(get_user)):
-    require_role(user.id, org_id, ["owner", "admin", "hr", "manager"])
+    require_role(user, org_id, ["owner", "admin", "hr", "manager"])
     upd = {}
     if body.name is not None and body.name.strip():
         upd["name"] = body.name.strip()
@@ -282,11 +282,27 @@ def super_admin_update_org_status(org_id: str, body: SuperAdminOrgStatus, user=D
 
 @app.get("/api/dashboard/{org_id}")
 def dashboard(org_id: str, user=Depends(get_user)):
-    require_org(user.id, org_id)
-    def count(table, field="organization_id", value=org_id):
-        try: return len(admin.table(table).select("id").eq(field,value).execute().data)
-        except Exception: return 0
-    return {"employees":count("employees"),"active_employees":len(admin.table("employees").select("id").eq("organization_id",org_id).eq("status","active").execute().data),"onboarding":count("onboarding_tasks"),"probation":count("probation_records"),"leave_pending":len(admin.table("leave_requests").select("id").eq("organization_id",org_id).eq("status","pending").execute().data),"open_jobs":len(admin.table("jobs").select("id").eq("organization_id",org_id).eq("status","open").execute().data),"expenses_pending":len(admin.table("expenses").select("id").eq("organization_id",org_id).eq("status","pending").execute().data)}
+    require_org(user, org_id)
+    def safe_count(table, **filters):
+        try:
+            q = admin.table(table).select("id")
+            for k, v in filters.items():
+                q = q.eq(k, v)
+            res = q.execute()
+            data = getattr(res, "data", None)
+            return len(data) if data and isinstance(data, list) else 0
+        except Exception:
+            return 0
+
+    return {
+        "employees": safe_count("employees", organization_id=org_id),
+        "active_employees": safe_count("employees", organization_id=org_id, status="active"),
+        "onboarding": safe_count("onboarding_tasks", organization_id=org_id),
+        "probation": safe_count("probation_records", organization_id=org_id),
+        "leave_pending": safe_count("leave_requests", organization_id=org_id, status="pending"),
+        "open_jobs": safe_count("jobs", organization_id=org_id, status="open"),
+        "expenses_pending": safe_count("expenses", organization_id=org_id, status="pending")
+    }
 
 def generate_next_employee_code(org_id: str) -> str:
     existing = admin.table("employees").select("employee_code").eq("organization_id", org_id).execute().data or []
@@ -306,7 +322,7 @@ def generate_next_employee_code(org_id: str) -> str:
 
 @app.get("/api/employees")
 def employees(org_id: str, user=Depends(get_user), q: str="", status: str="", limit: int=100, offset: int=0):
-    require_org(user.id, org_id)
+    require_org(user, org_id)
     
     # Auto-assign sequential employee codes (001, 002, 003...) to any existing employees missing a code
     unassigned = admin.table("employees").select("id, created_at").eq("organization_id", org_id).or_("employee_code.is.null,employee_code.eq.").order("created_at", desc=False).execute().data or []
@@ -322,7 +338,7 @@ def employees(org_id: str, user=Depends(get_user), q: str="", status: str="", li
 
 @app.post("/api/employees")
 def create_employee(body: EmployeeCreate, user=Depends(get_user)):
-    require_role(user.id, body.organization_id, ["owner", "admin", "hr"])
+    require_role(user, body.organization_id, ["owner", "admin", "hr"])
     data = body.model_dump(mode="json")
     if not data.get("employee_code") or not str(data["employee_code"]).strip():
         data["employee_code"] = generate_next_employee_code(body.organization_id)
@@ -337,7 +353,7 @@ class BulkImportPayload(BaseModel):
 
 @app.post("/api/employees/bulk-import")
 def bulk_import_employees(body: BulkImportPayload, user=Depends(get_user)):
-    require_role(user.id, body.organization_id, ["owner", "admin", "hr"])
+    require_role(user, body.organization_id, ["owner", "admin", "hr"])
     org_id = body.organization_id
     raw_list = body.employees
     if not raw_list:
@@ -551,7 +567,7 @@ def bulk_import_employees(body: BulkImportPayload, user=Depends(get_user)):
 
 @app.get("/api/employees/{employee_id}")
 def employee(employee_id: str, org_id: str, user=Depends(get_user)):
-    require_org(user.id,org_id)
+    require_org(user,org_id)
     e = safe_single(admin.table("employees").select("*, departments!employees_department_id_fkey(*), designations(*)").eq("id",employee_id).eq("organization_id",org_id))
     if not e: raise HTTPException(404,"Employee not found")
     tables=["employee_status_history","project_allocations","attendance_records","leave_requests","asset_assignments","system_access","expenses","payroll_records","performance_reviews","employee_changes","documents","resignations","offboarding_tasks"]
@@ -560,7 +576,7 @@ def employee(employee_id: str, org_id: str, user=Depends(get_user)):
 
 @app.post("/api/employees/{employee_id}/create-account")
 def provision_employee_account(employee_id: str, org_id: str, user=Depends(get_user)):
-    require_role(user.id, org_id, ["owner", "admin", "hr"])
+    require_role(user, org_id, ["owner", "admin", "hr"])
     emp = safe_single(admin.table("employees").select("*").eq("id", employee_id).eq("organization_id", org_id))
     if not emp: raise HTTPException(404, "Employee not found")
     
@@ -983,7 +999,7 @@ def forgot_password(body: ForgotPasswordRequest):
 
 @app.get("/api/organization/members")
 def list_organization_members(org_id: str, user=Depends(get_user)):
-    require_role(user.id, org_id, ["owner", "admin", "hr", "manager"])
+    require_role(user, org_id, ["owner", "admin", "hr", "manager"])
     members = admin.table("organization_members").select("*").eq("organization_id", org_id).execute().data
     employees = admin.table("employees").select("*").eq("organization_id", org_id).execute().data
     
@@ -1012,7 +1028,7 @@ class MemberRoleAssign(BaseModel):
 
 @app.post("/api/organization/members/assign-role")
 def assign_member_role(body: MemberRoleAssign, user=Depends(get_user)):
-    require_role(user.id, body.organization_id, ["owner", "admin"])
+    require_role(user, body.organization_id, ["owner", "admin"])
     
     if body.role not in ["owner", "admin", "hr", "manager", "employee"]:
         raise HTTPException(400, "Invalid role specified. Must be owner, admin, hr, manager, or employee.")
@@ -1051,14 +1067,14 @@ def assign_member_role(body: MemberRoleAssign, user=Depends(get_user)):
 
 @app.patch("/api/employees/{employee_id}")
 def update_employee(employee_id: str, org_id: str, body: dict = Body(...), user=Depends(get_user)):
-    require_org(user.id, org_id)
+    require_org(user, org_id)
     old = safe_single(admin.table("employees").select("*").eq("id", employee_id).eq("organization_id", org_id))
     if not old:
         raise HTTPException(404, "Employee not found")
         
     is_self = bool(old.get("user_id") and old.get("user_id") == user.id)
     if not is_self:
-        require_role(user.id, org_id, ["owner", "admin", "hr", "manager"])
+        require_role(user, org_id, ["owner", "admin", "hr", "manager"])
         
     raw_data = body.get("payload") if isinstance(body, dict) and "payload" in body else body
     if not isinstance(raw_data, dict):
@@ -1111,7 +1127,7 @@ def update_employee(employee_id: str, org_id: str, body: dict = Body(...), user=
 
 @app.post("/api/candidates/{candidate_id}/convert")
 def convert_candidate(candidate_id: str, org_id: str, user=Depends(get_user)):
-    require_role(user.id, org_id, ["owner", "admin", "hr"])
+    require_role(user, org_id, ["owner", "admin", "hr"])
     c = safe_single(admin.table("candidates").select("*").eq("id", candidate_id).eq("organization_id", org_id))
     if not c: raise HTTPException(404, "Candidate not found")
     
@@ -1142,7 +1158,7 @@ def convert_candidate(candidate_id: str, org_id: str, user=Depends(get_user)):
 
 @app.post("/api/candidates/{candidate_id}/approve")
 def approve_candidate_referral(candidate_id: str, org_id: str, user=Depends(get_user)):
-    require_role(user.id, org_id, ["owner", "admin", "hr", "manager"])
+    require_role(user, org_id, ["owner", "admin", "hr", "manager"])
     c = safe_single(admin.table("candidates").select("*").eq("id", candidate_id).eq("organization_id", org_id))
     if not c: raise HTTPException(404, "Candidate not found")
     
@@ -1190,11 +1206,11 @@ def generic_create(table:str, body:RequestModel, user=Depends(get_user)):
     if not org_id: raise HTTPException(400,"organization_id is required")
     
     if table in ["onboarding_tasks", "offboarding_tasks", "projects", "project_allocations", "assets", "asset_assignments", "payroll_records", "payroll_periods"]:
-        require_role(user.id, org_id, ["owner", "admin", "manager"])
+        require_role(user, org_id, ["owner", "admin", "manager"])
     elif table not in ["candidates", "leave_requests", "expenses", "attendance_corrections", "documents", "attendance_records", "attendance_locations"]:
-        require_role(user.id, org_id, ["owner", "admin", "hr", "manager"])
+        require_role(user, org_id, ["owner", "admin", "hr", "manager"])
     else:
-        require_org(user.id, org_id)
+        require_org(user, org_id)
     
     res = admin.table(table).insert(body.payload).execute().data
 
@@ -1338,7 +1354,7 @@ def format_attendance_record(rec: dict) -> dict:
 def generic_list(table:str, org_id:str, user=Depends(get_user), employee_id:str="", status:str="", limit:int=100, offset:int=0):
     allowed={"departments","designations","onboarding_tasks","probation_records","attendance_locations","attendance_records","attendance_corrections","leave_types","leave_balances","leave_requests","projects","project_allocations","assets","asset_assignments","system_access","expenses","payroll_periods","payroll_records","jobs","candidates","interviews","performance_cycles","performance_goals","performance_reviews","documents","offboarding_tasks","resignations","dashboard_preferences","notifications","audit_logs"}
     if table not in allowed: raise HTTPException(404,"Unsupported resource")
-    require_org(user.id,org_id)
+    require_org(user,org_id)
     q=admin.table(table).select("*").eq("organization_id",org_id).order("created_at",desc=True)
     if employee_id: q=q.eq("employee_id",employee_id)
     if status: q=q.eq("status",status)
@@ -1360,7 +1376,7 @@ def generic_update(table:str, id:str, body:RequestModel, user=Depends(get_user))
     if table not in allowed: raise HTTPException(404,"Unsupported resource")
     org_id=body.payload.get("organization_id")
     if not org_id: raise HTTPException(400,"organization_id is required")
-    require_role(user.id,org_id,["owner","admin","hr","manager"])
+    require_role(user,org_id,["owner","admin","hr","manager"])
     data={k:v for k,v in body.payload.items() if k not in ["id","organization_id","created_at"]}
     r=admin.table(table).update(data).eq("id",id).eq("organization_id",org_id).execute()
 
@@ -1399,13 +1415,13 @@ def generic_update(table:str, id:str, body:RequestModel, user=Depends(get_user))
 def generic_delete(table:str, id:str, org_id:str, user=Depends(get_user)):
     allowed={"departments","designations","onboarding_tasks","probation_records","attendance_locations","attendance_records","attendance_corrections","leave_types","leave_balances","leave_requests","projects","project_allocations","assets","asset_assignments","system_access","expenses","payroll_periods","payroll_records","jobs","candidates","interviews","performance_cycles","performance_goals","performance_reviews","documents","offboarding_tasks","resignations","dashboard_preferences","notifications"}
     if table not in allowed: raise HTTPException(404,"Unsupported resource")
-    require_role(user.id,org_id,["owner","admin","hr"])
+    require_role(user,org_id,["owner","admin","hr"])
     admin.table(table).delete().eq("id",id).eq("organization_id",org_id).execute()
     return {"success":True}
 
 @app.post("/api/attendance/clock-in")
 def clock_in(org_id:str, employee_id:str, location_id:str, latitude:float, longitude:float, user=Depends(get_user)):
-    require_org(user.id,org_id)
+    require_org(user,org_id)
     loc = safe_single(admin.table("attendance_locations").select("*").eq("id",location_id).eq("organization_id",org_id))
     if not loc: raise HTTPException(404,"Location not found")
     
@@ -1444,7 +1460,7 @@ def clock_in(org_id:str, employee_id:str, location_id:str, latitude:float, longi
 
 @app.post("/api/attendance/clock-out")
 def clock_out(record_id:str, org_id:str, latitude:float, longitude:float, user=Depends(get_user)):
-    require_org(user.id,org_id)
+    require_org(user,org_id)
     rec = safe_single(admin.table("attendance_records").select("*").eq("id", record_id).eq("organization_id", org_id))
     if not rec: raise HTTPException(404,"Attendance record not found")
     
@@ -1478,7 +1494,7 @@ def clock_out(record_id:str, org_id:str, latitude:float, longitude:float, user=D
 
 @app.post("/api/attendance/start-break")
 def start_break(record_id: str, org_id: str, user=Depends(get_user)):
-    require_org(user.id, org_id)
+    require_org(user, org_id)
     rec = safe_single(admin.table("attendance_records").select("*").eq("id", record_id).eq("organization_id", org_id))
     if not rec:
         raise HTTPException(404, "Attendance record not found")
@@ -1502,7 +1518,7 @@ def start_break(record_id: str, org_id: str, user=Depends(get_user)):
 
 @app.post("/api/attendance/end-break")
 def end_break(record_id: str, org_id: str, user=Depends(get_user)):
-    require_org(user.id, org_id)
+    require_org(user, org_id)
     rec = safe_single(admin.table("attendance_records").select("*").eq("id", record_id).eq("organization_id", org_id))
     if not rec:
         raise HTTPException(404, "Attendance record not found")
@@ -1542,7 +1558,7 @@ class RemoteLocationRegister(BaseModel):
 
 @app.post("/api/attendance/register-remote-location")
 def register_remote_location(body: RemoteLocationRegister, user=Depends(get_user)):
-    require_org(user.id, body.organization_id)
+    require_org(user, body.organization_id)
     addr_tag = f"employee_id:{body.employee_id}" if body.employee_id else None
     
     existing = None
@@ -1576,7 +1592,7 @@ def register_remote_location(body: RemoteLocationRegister, user=Depends(get_user
 
 @app.post("/api/attendance/auto-process-absent")
 def auto_process_absent(org_id: str, days_back: int = 14, user=Depends(get_user)):
-    require_org(user.id, org_id)
+    require_org(user, org_id)
     
     employees = admin.table("employees").select("id, created_at, date_of_joining, status").eq("organization_id", org_id).eq("status", "active").execute().data
     if not employees:
@@ -1652,7 +1668,7 @@ def auto_process_absent(org_id: str, days_back: int = 14, user=Depends(get_user)
 
 @app.post("/api/setup/seed")
 def seed(org_id:str,user=Depends(get_user)):
-    require_role(user.id,org_id,["owner","admin","hr"])
+    require_role(user,org_id,["owner","admin","hr"])
     for name in ["Engineering","Product","Marketing","Finance","Human Resources"]:
         admin.table("departments").insert({"organization_id":org_id,"name":name}).execute()
     for name in ["Software Engineer","Senior Software Engineer","Product Manager","HR Manager","Finance Manager"]:

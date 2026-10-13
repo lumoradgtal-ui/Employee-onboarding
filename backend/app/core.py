@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from supabase import create_client, Client
 from fastapi import Header, HTTPException
-from typing import Optional
+from typing import Optional, Any
 
 class Settings(BaseSettings):
     supabase_url: str
@@ -32,28 +32,28 @@ def is_super_admin(user) -> bool:
         return False
     u_email = user.email.lower().strip()
     configured = [e.strip().lower() for e in settings.super_admin_emails.split(",") if e.strip()]
-    if u_email in configured:
-        return True
-    try:
-        p = admin.table("profiles").select("is_super_admin").eq("id", user.id).maybe_single().execute()
-        if p and p.data and p.data.get("is_super_admin") is True:
-            return True
-    except Exception:
-        pass
-    return False
+    return u_email in configured
 
 def is_super_admin_id(user_id: str) -> bool:
+    configured = [e.strip().lower() for e in settings.super_admin_emails.split(",") if e.strip()]
     try:
-        p = admin.table("profiles").select("email, is_super_admin").eq("id", user_id).maybe_single().execute()
+        p = admin.table("profiles").select("email").eq("id", user_id).maybe_single().execute()
         if p and p.data:
-            if p.data.get("is_super_admin") is True:
-                return True
             email = (p.data.get("email") or "").lower().strip()
-            configured = [e.strip().lower() for e in settings.super_admin_emails.split(",") if e.strip()]
             if email in configured:
                 return True
     except Exception:
         pass
+
+    try:
+        u = admin.auth.admin.get_user_by_id(user_id)
+        if u and u.user and u.user.email:
+            email = u.user.email.lower().strip()
+            if email in configured:
+                return True
+    except Exception:
+        pass
+
     return False
 
 def require_super_admin(authorization: Optional[str] = Header(None)):
@@ -66,7 +66,17 @@ def membership(user_id: str, org_id: str):
     r = admin.table("organization_members").select("*").eq("organization_id", org_id).eq("user_id", user_id).eq("status","active").maybe_single().execute()
     return r.data
 
-def require_org(user_id: str, org_id: str):
+def require_org(user_or_id: Any, org_id: str):
+    if hasattr(user_or_id, 'id'):
+        user = user_or_id
+        user_id = user.id
+        if is_super_admin(user):
+            return {"organization_id": org_id, "user_id": user_id, "role": "owner", "status": "active"}
+    else:
+        user_id = str(user_or_id)
+        if is_super_admin_id(user_id):
+            return {"organization_id": org_id, "user_id": user_id, "role": "owner", "status": "active"}
+
     m = membership(user_id, org_id)
     if not m:
         if is_super_admin_id(user_id):
@@ -74,8 +84,11 @@ def require_org(user_id: str, org_id: str):
         raise HTTPException(403, "You are not a member of this organization")
     return m
 
-def require_role(user_id: str, org_id: str, roles: list[str]):
-    m = require_org(user_id, org_id)
+def require_role(user_or_id: Any, org_id: str, roles: list[str]):
+    m = require_org(user_or_id, org_id)
+    if hasattr(user_or_id, 'id') and is_super_admin(user_or_id):
+        return m
+    user_id = user_or_id.id if hasattr(user_or_id, 'id') else str(user_or_id)
     if is_super_admin_id(user_id):
         return m
     if m.get("role") not in roles:
