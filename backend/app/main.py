@@ -1,5 +1,6 @@
 import smtplib
 import os
+import json
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.header import Header
@@ -45,6 +46,19 @@ def send_email_notification(to_email: str, subject: str, body_text: str, body_ht
         print(f"[SIMULATED EMAIL DISPATCH] To: {to_email} | Subject: {subject}\nBody:\n{body_text}\n")
         return True
 
+def safe_single(query):
+    try:
+        r = query.execute()
+        if r is None:
+            return None
+        data = getattr(r, 'data', None)
+        if data is None:
+            return None
+        if isinstance(data, list):
+            return data[0] if len(data) > 0 else None
+        return data
+    except Exception:
+        return None
 
 class OrgCreate(BaseModel): name: str = Field(min_length=2, max_length=160)
 class EmployeeCreate(BaseModel):
@@ -157,9 +171,8 @@ def create_employee(body: EmployeeCreate, user=Depends(get_user)):
 @app.get("/api/employees/{employee_id}")
 def employee(employee_id: str, org_id: str, user=Depends(get_user)):
     require_org(user.id,org_id)
-    r=admin.table("employees").select("*, departments!employees_department_id_fkey(*), designations(*)").eq("id",employee_id).eq("organization_id",org_id).maybe_single().execute()
-    if not r.data: raise HTTPException(404,"Employee not found")
-    e=r.data
+    e = safe_single(admin.table("employees").select("*, departments!employees_department_id_fkey(*), designations(*)").eq("id",employee_id).eq("organization_id",org_id))
+    if not e: raise HTTPException(404,"Employee not found")
     tables=["employee_status_history","project_allocations","attendance_records","leave_requests","asset_assignments","system_access","expenses","payroll_records","performance_reviews","employee_changes","documents","resignations","offboarding_tasks"]
     e["timeline"]={t:admin.table(t).select("*").eq("employee_id",employee_id).order("created_at",desc=True).execute().data for t in tables if t not in ["attendance_records","leave_requests"]}
     return e
@@ -167,7 +180,7 @@ def employee(employee_id: str, org_id: str, user=Depends(get_user)):
 @app.post("/api/employees/{employee_id}/create-account")
 def provision_employee_account(employee_id: str, org_id: str, user=Depends(get_user)):
     require_role(user.id, org_id, ["owner", "admin", "hr"])
-    emp = admin.table("employees").select("*").eq("id", employee_id).eq("organization_id", org_id).maybe_single().execute().data
+    emp = safe_single(admin.table("employees").select("*").eq("id", employee_id).eq("organization_id", org_id))
     if not emp: raise HTTPException(404, "Employee not found")
     
     target_email = emp.get("work_email") or emp.get("personal_email")
@@ -230,7 +243,7 @@ def provision_employee_account(employee_id: str, org_id: str, user=Depends(get_u
         # Fetch organization name for email branding
         org_name = "HRMS Platform"
         try:
-            org_res = admin.table("organizations").select("name").eq("id", org_id).maybe_single().execute().data
+            org_res = safe_single(admin.table("organizations").select("name").eq("id", org_id))
             if org_res and org_res.get("name"):
                 org_name = org_res["name"]
         except Exception as oe:
@@ -625,7 +638,7 @@ def assign_member_role(body: MemberRoleAssign, user=Depends(get_user)):
         
     target_user_id = body.user_id
     if not target_user_id and body.employee_id:
-        emp = admin.table("employees").select("user_id, first_name, last_name").eq("id", body.employee_id).eq("organization_id", body.organization_id).maybe_single().execute().data
+        emp = safe_single(admin.table("employees").select("user_id, first_name, last_name").eq("id", body.employee_id).eq("organization_id", body.organization_id))
         if not emp or not emp.get("user_id"):
             raise HTTPException(400, "Employee does not have a provisioned login user account yet. Provision account first.")
         target_user_id = emp["user_id"]
@@ -658,7 +671,7 @@ def assign_member_role(body: MemberRoleAssign, user=Depends(get_user)):
 @app.patch("/api/employees/{employee_id}")
 def update_employee(employee_id: str, org_id: str, body: dict = Body(...), user=Depends(get_user)):
     require_org(user.id, org_id)
-    old = admin.table("employees").select("*").eq("id", employee_id).eq("organization_id", org_id).maybe_single().execute().data
+    old = safe_single(admin.table("employees").select("*").eq("id", employee_id).eq("organization_id", org_id))
     if not old:
         raise HTTPException(404, "Employee not found")
         
@@ -718,7 +731,7 @@ def update_employee(employee_id: str, org_id: str, body: dict = Body(...), user=
 @app.post("/api/candidates/{candidate_id}/convert")
 def convert_candidate(candidate_id: str, org_id: str, user=Depends(get_user)):
     require_role(user.id, org_id, ["owner", "admin", "hr"])
-    c = admin.table("candidates").select("*").eq("id", candidate_id).eq("organization_id", org_id).maybe_single().execute().data
+    c = safe_single(admin.table("candidates").select("*").eq("id", candidate_id).eq("organization_id", org_id))
     if not c: raise HTTPException(404, "Candidate not found")
     
     # Create employee from candidate
@@ -749,7 +762,7 @@ def convert_candidate(candidate_id: str, org_id: str, user=Depends(get_user)):
 @app.post("/api/candidates/{candidate_id}/approve")
 def approve_candidate_referral(candidate_id: str, org_id: str, user=Depends(get_user)):
     require_role(user.id, org_id, ["owner", "admin", "hr", "manager"])
-    c = admin.table("candidates").select("*").eq("id", candidate_id).eq("organization_id", org_id).maybe_single().execute().data
+    c = safe_single(admin.table("candidates").select("*").eq("id", candidate_id).eq("organization_id", org_id))
     if not c: raise HTTPException(404, "Candidate not found")
     
     # Update candidate stage to screening/approved
@@ -758,13 +771,13 @@ def approve_candidate_referral(candidate_id: str, org_id: str, user=Depends(get_
     # Fetch job title if matched
     job_title = "General Position"
     if c.get("job_id"):
-        j = admin.table("jobs").select("title").eq("id", c["job_id"]).maybe_single().execute().data
+        j = safe_single(admin.table("jobs").select("title").eq("id", c["job_id"]))
         if j: job_title = j.get("title", job_title)
         
     # Get referrer name
     referrer_name = "our employee"
     if c.get("referrer_employee_id"):
-        ref_emp = admin.table("employees").select("first_name, last_name").eq("id", c["referrer_employee_id"]).maybe_single().execute().data
+        ref_emp = safe_single(admin.table("employees").select("first_name, last_name").eq("id", c["referrer_employee_id"]))
         if ref_emp:
             referrer_name = f"{ref_emp['first_name']} {ref_emp.get('last_name') or ''}".strip()
             
@@ -808,7 +821,7 @@ def generic_create(table:str, body:RequestModel, user=Depends(get_user)):
     if table == "leave_requests" and body.payload.get("employee_id"):
         try:
             emp_id = body.payload.get("employee_id")
-            emp = admin.table("employees").select("*").eq("id", emp_id).maybe_single().execute().data
+            emp = safe_single(admin.table("employees").select("*").eq("id", emp_id))
             if emp:
                 emp_name = f"{emp.get('first_name')} {emp.get('last_name') or ''}".strip()
                 s_date = body.payload.get("start_date", "N/A")
@@ -821,7 +834,7 @@ def generic_create(table:str, body:RequestModel, user=Depends(get_user)):
 
                 # 1. Target assigned specific manager
                 if emp.get("manager_id"):
-                    mgr_emp = admin.table("employees").select("*").eq("id", emp["manager_id"]).maybe_single().execute().data
+                    mgr_emp = safe_single(admin.table("employees").select("*").eq("id", emp["manager_id"]))
                     if mgr_emp:
                         if mgr_emp.get("user_id"):
                             recipient_user_ids.add(mgr_emp["user_id"])
@@ -858,7 +871,7 @@ def generic_create(table:str, body:RequestModel, user=Depends(get_user)):
     if table in ["onboarding_tasks", "offboarding_tasks"] and body.payload.get("employee_id"):
         try:
             emp_id = body.payload.get("employee_id")
-            emp = admin.table("employees").select("*").eq("id", emp_id).maybe_single().execute().data
+            emp = safe_single(admin.table("employees").select("*").eq("id", emp_id))
             if emp:
                 target_email = emp.get("work_email") or emp.get("personal_email")
                 task_title = body.payload.get("title", "New Assigned Task")
@@ -891,8 +904,8 @@ def generic_create(table:str, body:RequestModel, user=Depends(get_user)):
             proj_id = body.payload.get("project_id")
             alloc_pct = body.payload.get("allocation_percentage", 100)
             
-            emp = admin.table("employees").select("*").eq("id", emp_id).maybe_single().execute().data
-            proj = admin.table("projects").select("*").eq("id", proj_id).maybe_single().execute().data
+            emp = safe_single(admin.table("employees").select("*").eq("id", emp_id))
+            proj = safe_single(admin.table("projects").select("*").eq("id", proj_id))
             
             if emp and proj:
                 emp_name = f"{emp.get('first_name')} {emp.get('last_name') or ''}".strip()
@@ -921,6 +934,25 @@ def generic_create(table:str, body:RequestModel, user=Depends(get_user)):
 
     return res
 
+def format_attendance_record(rec: dict) -> dict:
+    if not rec:
+        return rec
+    res = dict(rec)
+    notes_val = res.get("notes")
+    break_start_at = None
+    total_break_minutes = 0
+    if notes_val and isinstance(notes_val, str) and notes_val.strip().startswith("{"):
+        try:
+            parsed = json.loads(notes_val)
+            if isinstance(parsed, dict):
+                break_start_at = parsed.get("break_start_at")
+                total_break_minutes = parsed.get("total_break_minutes", 0)
+        except Exception:
+            pass
+    res["break_start_at"] = res.get("break_start_at") or break_start_at
+    res["total_break_minutes"] = res.get("total_break_minutes") if res.get("total_break_minutes") is not None else total_break_minutes
+    return res
+
 @app.get("/api/{table}")
 def generic_list(table:str, org_id:str, user=Depends(get_user), employee_id:str="", status:str="", limit:int=100, offset:int=0):
     allowed={"departments","designations","onboarding_tasks","probation_records","attendance_locations","attendance_records","attendance_corrections","leave_types","leave_balances","leave_requests","projects","project_allocations","assets","asset_assignments","system_access","expenses","payroll_periods","payroll_records","jobs","candidates","interviews","performance_cycles","performance_goals","performance_reviews","documents","offboarding_tasks","resignations","dashboard_preferences","notifications","audit_logs"}
@@ -929,7 +961,10 @@ def generic_list(table:str, org_id:str, user=Depends(get_user), employee_id:str=
     q=admin.table(table).select("*").eq("organization_id",org_id).order("created_at",desc=True)
     if employee_id: q=q.eq("employee_id",employee_id)
     if status: q=q.eq("status",status)
-    return q.range(offset,offset+limit-1).execute().data
+    data = q.range(offset,offset+limit-1).execute().data
+    if table == "attendance_records" and data:
+        return [format_attendance_record(r) for r in data]
+    return data
 
 @app.patch("/api/{table}/{id}")
 def generic_update(table:str, id:str, body:RequestModel, user=Depends(get_user)):
@@ -944,9 +979,9 @@ def generic_update(table:str, id:str, body:RequestModel, user=Depends(get_user))
     if table == "leave_requests" and "status" in data:
         try:
             new_status = data["status"]
-            old_req = admin.table("leave_requests").select("*").eq("id", id).maybe_single().execute().data
+            old_req = safe_single(admin.table("leave_requests").select("*").eq("id", id))
             if old_req and old_req.get("employee_id"):
-                emp = admin.table("employees").select("*").eq("id", old_req["employee_id"]).maybe_single().execute().data
+                emp = safe_single(admin.table("employees").select("*").eq("id", old_req["employee_id"]))
                 if emp:
                     emp_name = f"{emp.get('first_name')} {emp.get('last_name') or ''}".strip()
                     target_email = emp.get("work_email") or emp.get("personal_email")
@@ -983,12 +1018,15 @@ def generic_delete(table:str, id:str, org_id:str, user=Depends(get_user)):
 @app.post("/api/attendance/clock-in")
 def clock_in(org_id:str, employee_id:str, location_id:str, latitude:float, longitude:float, user=Depends(get_user)):
     require_org(user.id,org_id)
-    loc=admin.table("attendance_locations").select("*").eq("id",location_id).eq("organization_id",org_id).maybe_single().execute().data
+    loc = safe_single(admin.table("attendance_locations").select("*").eq("id",location_id).eq("organization_id",org_id))
     if not loc: raise HTTPException(404,"Location not found")
     
     # Check if employee has already clocked in today
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
-    existing = admin.table("attendance_records").select("*").eq("organization_id", org_id).eq("employee_id", employee_id).eq("attendance_date", today_str).maybe_single().execute().data
+    from datetime import timezone, timedelta
+    ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    today_str = ist_now.strftime("%Y-%m-%d")
+    
+    existing = safe_single(admin.table("attendance_records").select("*").eq("organization_id", org_id).eq("employee_id", employee_id).eq("attendance_date", today_str))
     if existing:
         if not existing.get("clock_out_at"):
             raise HTTPException(400, "You are currently clocked in. Please clock out first.")
@@ -999,74 +1037,112 @@ def clock_in(org_id:str, employee_id:str, location_id:str, latitude:float, longi
     import math
     r=6371000; p1=math.radians(loc["latitude"]); p2=math.radians(latitude); dp=math.radians(latitude-loc["latitude"]); dl=math.radians(longitude-loc["longitude"])
     a=math.sin(dp/2)**2+math.cos(p1)*math.cos(p2)*math.sin(dl/2)**2; dist=2*r*math.asin(math.sqrt(a))
-    if dist>loc["radius_meters"]: raise HTTPException(400,f"Outside allowed attendance radius ({round(dist)}m)")
-    rec=admin.table("attendance_records").insert({"organization_id":org_id,"employee_id":employee_id,"location_id":location_id,"clock_in_at":datetime.utcnow().isoformat(),"clock_in_latitude":latitude,"clock_in_longitude":longitude,"clock_in_distance_meters":dist,"status":"present"}).execute().data[0]
-    return rec
+    if dist>loc["radius_meters"]:
+        raise HTTPException(400,f"Outside allowed attendance radius ({round(dist)}m). Allowed radius is {loc['radius_meters']}m. Please update your remote workstation location or move closer.")
+        
+    rec_res = admin.table("attendance_records").insert({
+        "organization_id": org_id,
+        "employee_id": employee_id,
+        "location_id": location_id,
+        "clock_in_at": datetime.now(timezone.utc).isoformat(),
+        "clock_in_latitude": latitude,
+        "clock_in_longitude": longitude,
+        "clock_in_distance_meters": dist,
+        "status": "present"
+    }).execute()
+    if not rec_res or not rec_res.data:
+        raise HTTPException(500, "Failed to record clock-in attendance")
+    return format_attendance_record(rec_res.data[0])
 
 @app.post("/api/attendance/clock-out")
 def clock_out(record_id:str, org_id:str, latitude:float, longitude:float, user=Depends(get_user)):
     require_org(user.id,org_id)
-    rec = admin.table("attendance_records").select("*").eq("id", record_id).eq("organization_id", org_id).maybe_single().execute().data
+    rec = safe_single(admin.table("attendance_records").select("*").eq("id", record_id).eq("organization_id", org_id))
     if not rec: raise HTTPException(404,"Attendance record not found")
     
-    extra = {}
-    if rec.get("break_start_at"):
+    formatted = format_attendance_record(rec)
+    total_break = formatted.get("total_break_minutes") or 0
+    if formatted.get("break_start_at"):
         from datetime import datetime as dt, timezone
-        b_start = dt.fromisoformat(rec["break_start_at"].replace("Z", "+00:00"))
-        b_end = datetime.now(timezone.utc) if b_start.tzinfo else datetime.utcnow()
-        elapsed_mins = max(1, int((b_end - b_start).total_seconds() // 60))
-        current_break_total = rec.get("total_break_minutes") or 0
-        extra["total_break_minutes"] = current_break_total + elapsed_mins
-        extra["break_start_at"] = None
+        try:
+            b_start = dt.fromisoformat(formatted["break_start_at"].replace("Z", "+00:00"))
+            b_end = datetime.now(timezone.utc) if b_start.tzinfo else datetime.utcnow()
+            elapsed_mins = max(1, int((b_end - b_start).total_seconds() // 60))
+            total_break += elapsed_mins
+        except Exception:
+            pass
 
-    r=admin.table("attendance_records").update({
-        "clock_out_at":datetime.utcnow().isoformat(),
-        "clock_out_latitude":latitude,
-        "clock_out_longitude":longitude,
+    meta = {
+        "break_start_at": None,
+        "total_break_minutes": total_break
+    }
+
+    from datetime import timezone
+    r = admin.table("attendance_records").update({
+        "clock_out_at": datetime.now(timezone.utc).isoformat(),
+        "clock_out_latitude": latitude,
+        "clock_out_longitude": longitude,
         "status": "present",
-        **extra
-    }).eq("id",record_id).eq("organization_id",org_id).execute().data
-    return r[0]
+        "notes": json.dumps(meta)
+    }).eq("id", record_id).eq("organization_id", org_id).execute().data
+    out = r[0] if r else rec
+    return format_attendance_record(out)
 
 @app.post("/api/attendance/start-break")
 def start_break(record_id: str, org_id: str, user=Depends(get_user)):
     require_org(user.id, org_id)
-    rec = admin.table("attendance_records").select("*").eq("id", record_id).eq("organization_id", org_id).maybe_single().execute().data
+    rec = safe_single(admin.table("attendance_records").select("*").eq("id", record_id).eq("organization_id", org_id))
     if not rec:
         raise HTTPException(404, "Attendance record not found")
     if rec.get("clock_out_at"):
         raise HTTPException(400, "Shift is already completed")
-    if rec.get("break_start_at"):
+    formatted = format_attendance_record(rec)
+    if formatted.get("break_start_at"):
         raise HTTPException(400, "Already on break")
         
+    from datetime import timezone
+    meta = {
+        "break_start_at": datetime.now(timezone.utc).isoformat(),
+        "total_break_minutes": formatted.get("total_break_minutes", 0)
+    }
     updated = admin.table("attendance_records").update({
-        "break_start_at": datetime.utcnow().isoformat(),
+        "notes": json.dumps(meta),
         "status": "on_break"
     }).eq("id", record_id).execute().data
-    return updated[0] if updated else rec
+    out = updated[0] if updated else rec
+    return format_attendance_record(out)
 
 @app.post("/api/attendance/end-break")
 def end_break(record_id: str, org_id: str, user=Depends(get_user)):
     require_org(user.id, org_id)
-    rec = admin.table("attendance_records").select("*").eq("id", record_id).eq("organization_id", org_id).maybe_single().execute().data
+    rec = safe_single(admin.table("attendance_records").select("*").eq("id", record_id).eq("organization_id", org_id))
     if not rec:
         raise HTTPException(404, "Attendance record not found")
-    if not rec.get("break_start_at"):
+    formatted = format_attendance_record(rec)
+    if not formatted.get("break_start_at"):
         raise HTTPException(400, "Not currently on break")
         
     from datetime import datetime as dt, timezone
-    b_start = dt.fromisoformat(rec["break_start_at"].replace("Z", "+00:00"))
-    b_end = datetime.now(timezone.utc) if b_start.tzinfo else datetime.utcnow()
-    elapsed_mins = max(1, int((b_end - b_start).total_seconds() // 60))
-    current_break_total = rec.get("total_break_minutes") or 0
+    try:
+        b_start = dt.fromisoformat(formatted["break_start_at"].replace("Z", "+00:00"))
+        b_end = datetime.now(timezone.utc) if b_start.tzinfo else datetime.utcnow()
+        elapsed_mins = max(1, int((b_end - b_start).total_seconds() // 60))
+    except Exception:
+        elapsed_mins = 0
+    current_break_total = formatted.get("total_break_minutes") or 0
     new_break_total = current_break_total + elapsed_mins
 
-    updated = admin.table("attendance_records").update({
+    meta = {
         "break_start_at": None,
-        "total_break_minutes": new_break_total,
+        "total_break_minutes": new_break_total
+    }
+
+    updated = admin.table("attendance_records").update({
+        "notes": json.dumps(meta),
         "status": "present"
     }).eq("id", record_id).execute().data
-    return updated[0] if updated else rec
+    out = updated[0] if updated else rec
+    return format_attendance_record(out)
 
 class RemoteLocationRegister(BaseModel):
     organization_id: str
